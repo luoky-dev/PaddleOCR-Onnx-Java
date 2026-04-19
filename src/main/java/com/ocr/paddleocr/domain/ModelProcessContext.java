@@ -1,6 +1,5 @@
 package com.ocr.paddleocr.domain;
 
-import com.ocr.paddleocr.domain.TextBox;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -52,11 +51,6 @@ public class ModelProcessContext {
      * 缩放比例
      */
     private float scale;
-
-    /**
-     * 模型输出
-     */
-    private float[][] modelOutput;
 
     /**
      * 处理时间（毫秒）

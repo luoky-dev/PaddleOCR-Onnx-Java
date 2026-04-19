@@ -133,21 +133,20 @@ public class PaddleOCR implements Closeable {
             context.setRawMat(image);
             context.setOriginalHeight(image.height());
             context.setOriginalWidth(image.width());
-            resultBuilder.imageHeight(image.height())
-                    .imageWidth(image.width());
+            resultBuilder.imageHeight(image.height()).imageWidth(image.width());
 
             // 2. 文本检测
             detProcess.detect(context);
             if (!context.isSuccess() || context.getBoxes() == null || context.getBoxes().isEmpty()) {
                 log.warn("未检测到文本区域, 识别失败");
-                resultBuilder.error("No text area detected, recognition failed")
+                resultBuilder.error(context.getError())
                         .processingTime(System.currentTimeMillis() - startTime);
                 image.release();
                 return resultBuilder.build();
             }
             log.info("检测到 {} 个文本区域", context.getBoxes().size());
 
-            // 3. 方向分类（如果启用）
+            // 3. 方向分类
             if (clsProcess != null && config.isUseAngleCls()) {
                 clsProcess.classify(context);
                 if (!context.isSuccess()) {
@@ -161,7 +160,7 @@ public class PaddleOCR implements Closeable {
 
             if (!context.isSuccess()) {
                 log.warn("文本识别失败: {}", context.getError());
-                resultBuilder.error("Text recognition failed")
+                resultBuilder.error(context.getError())
                         .processingTime(System.currentTimeMillis() - startTime);
                 image.release();
                 return resultBuilder.build();
@@ -198,6 +197,7 @@ public class PaddleOCR implements Closeable {
         }
 
         return boxes.stream()
+                // 过滤空文本和低置信度文本
                 .filter(r -> r.getText() != null && !r.getText().isEmpty())
                 .filter(r -> r.getRecConfidence() >= config.getMinConfidence())
                 .map(r -> OCRPrediction.builder()

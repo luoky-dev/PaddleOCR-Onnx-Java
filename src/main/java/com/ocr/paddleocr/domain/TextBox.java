@@ -26,11 +26,6 @@ public class TextBox {
     private Mat rotMat;
 
     /**
-     * 模型输出
-     */
-    private float[][] modelOutput;
-
-    /**
      * 检测框四个顶点
      */
     private List<Point> box;

@@ -80,14 +80,12 @@ public class DetProcess implements AutoCloseable {
             log.info("过滤后剩余 {} 个文本框", boxes.size());
 
             // 7. 设置识别结果
-            List<TextBox> boxResults = boxes.stream()
+            context.setBoxes(boxes.stream()
                     .map(box -> {
                         TextBox textBox = new TextBox();
                         textBox.setBox(box);
                         return textBox;
-                    })
-                    .collect(Collectors.toList());
-            context.setBoxes(boxResults);
+                    }).collect(Collectors.toList()));
 
             // 8. 释放资源
             inputTensor.close();
