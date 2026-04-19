@@ -33,9 +33,6 @@ public class ClsProcess implements AutoCloseable {
     /** 方向标签映射：索引0→0°, 1→180°, 2→90°, 3→270° */
     private static final int[] ANGLES = {0, 180, 90, 270};
 
-    /** 需要旋转的角度阈值（置信度低于此值时不旋转） */
-    private static final float ROTATE_CONFIDENCE_THRESHOLD = 0.6f;
-
     /** ONNX模型会话 */
     private OrtSession session;
 
@@ -55,7 +52,8 @@ public class ClsProcess implements AutoCloseable {
         this.config = config;
         this.env = OrtEnvironment.getEnvironment();
         loadModel();
-        log.info("方向分类处理器初始化完成，模型路径: {}", config.getClsModelPath());
+        log.info("方向分类处理器初始化完成，模型路径: {}, 分类阈值: {}",
+                config.getClsModelPath(), config.getClsThresh());
     }
 
     /**
@@ -123,7 +121,7 @@ public class ClsProcess implements AutoCloseable {
                 box.setAngle(result.angle);
                 box.setClsConfidence(result.confidence);
 
-                // 判断是否需要旋转并执行
+                // 修复3: 判断是否需要旋转并执行（使用配置的阈值）
                 if (needRotate(box)) {
                     Mat originalCrop = cropImages.get(i);
                     rotateTextBox(box, originalCrop);
@@ -153,10 +151,6 @@ public class ClsProcess implements AutoCloseable {
 
     /**
      * 批量分类
-     *
-     * @param images 待分类的图像列表
-     * @return 分类结果列表
-     * @throws OrtException ONNX异常
      */
     private List<ClassificationResult> classifyBatch(List<Mat> images) throws OrtException {
         if (images == null || images.isEmpty()) {
@@ -195,13 +189,8 @@ public class ClsProcess implements AutoCloseable {
         return results;
     }
 
-
-
     /**
      * 批量预处理
-     *
-     * @param images 原始图像列表
-     * @return 预处理后的图像列表
      */
     private List<Mat> batchPreprocess(List<Mat> images) {
         List<Mat> processed = new ArrayList<>();
@@ -212,34 +201,27 @@ public class ClsProcess implements AutoCloseable {
     }
 
     /**
-     * 预处理：转RGB + 缩放到固定尺寸 + 官方归一化
-     * 官方分类模型使用ImageNet均值标准差
+     * 预处理：转RGB + 缩放到固定尺寸 + 归一化
      */
     private Mat preprocess(Mat image) {
         return MatPipeline.fromMat(image)
-                .toRGB()  // BGR转RGB
+                .toRGB()
                 .resize(MODEL_INPUT_WIDTH, MODEL_INPUT_HEIGHT)
-                .normalize()  // 使用ImageNet均值标准差
+                .normalize()
                 .get();
     }
 
     /**
      * 解析批量输出（3D数组格式）
-     *
-     * @param output ONNX模型输出
-     * @return 3D输出数据 [batch, num_classes]
-     * @throws OrtException ONNX异常
      */
     private float[][][] parseBatchOutput(OrtSession.Result output) throws OrtException {
         OnnxValue outputValue = output.get(0);
 
         try {
-            // 格式1: 直接是3D数组 [batch, 1, num_classes] 或 [batch, num_classes]
             Object value = outputValue.getValue();
 
             if (value instanceof float[][][]) {
                 float[][][] value3D = (float[][][]) value;
-                // 如果是 [batch, 1, num_classes] 格式，压缩中间维度
                 if (value3D.length > 0 && value3D[0].length == 1) {
                     float[][][] result = new float[value3D.length][1][value3D[0][0].length];
                     for (int i = 0; i < value3D.length; i++) {
@@ -250,7 +232,6 @@ public class ClsProcess implements AutoCloseable {
                 return value3D;
             }
             else if (value instanceof float[][]) {
-                // 格式2: 2D数组 [batch, num_classes]
                 float[][] value2D = (float[][]) value;
                 float[][][] result = new float[value2D.length][1][value2D[0].length];
                 for (int i = 0; i < value2D.length; i++) {
@@ -268,19 +249,13 @@ public class ClsProcess implements AutoCloseable {
 
     /**
      * 解析分类输出，获取角度和置信度
-     *
-     * @param outputData 模型输出 [1, num_classes] 或 [num_classes]
-     * @return 分类结果
      */
     private ClassificationResult parseClassificationOutput(float[][] outputData) {
         if (outputData == null || outputData.length == 0) {
             return new ClassificationResult(0, 0.0f);
         }
 
-        // 获取预测结果（取第一行）
         float[] probabilities = outputData[0];
-
-        // 获取最大概率的索引
         int predClass = argmax(probabilities);
         float confidence = probabilities[predClass];
         int angle = ANGLES[predClass];
@@ -317,17 +292,22 @@ public class ClsProcess implements AutoCloseable {
         int angle = detBox.getAngle();
         float confidence = detBox.getClsConfidence();
 
-        // 只有180度需要旋转（PaddleOCR主要修正180度颠倒）
+        // 从配置获取阈值
+        float threshold = config.getClsThresh();
+
+        // 只有180度需要旋转
         // 且置信度需要达到阈值
-        if (angle == 180 && confidence >= ROTATE_CONFIDENCE_THRESHOLD) {
-            log.debug("检测到{}度旋转，将进行旋转处理", angle);
+        if (angle == 180 && confidence >= threshold) {
+            log.debug("检测到{}度旋转，将进行旋转处理 (置信度: {}, 阈值: {})",
+                    angle, confidence, threshold);
             return true;
         }
 
-        // 90度和270度可选旋转（根据配置决定）
+        // 90度和270度可选旋转
         if (config.isUseAngleCls() && (angle == 90 || angle == 270)
-                && confidence >= ROTATE_CONFIDENCE_THRESHOLD) {
-            log.debug("检测到{}度旋转，将进行旋转处理", angle);
+                && confidence >= threshold) {
+            log.debug("检测到{}度旋转，将进行旋转处理 (置信度: {}, 阈值: {})",
+                    angle, confidence, threshold);
             return true;
         }
 
@@ -336,9 +316,6 @@ public class ClsProcess implements AutoCloseable {
 
     /**
      * 旋转文本框图像并更新坐标
-     *
-     * @param detBox 文本框对象
-     * @param originalImage 原始裁剪图像（用于旋转）
      */
     private void rotateTextBox(TextBox detBox, Mat originalImage) {
         detBox.setRawMat(originalImage);
@@ -346,7 +323,6 @@ public class ClsProcess implements AutoCloseable {
             int angle = detBox.getAngle();
             Mat rotatedMat = null;
 
-            // 根据角度进行旋转
             if (angle == 180) {
                 rotatedMat = rotateImage180(originalImage);
                 detBox.setRotAngle(180);
@@ -359,7 +335,6 @@ public class ClsProcess implements AutoCloseable {
             }
 
             if (rotatedMat != null) {
-                // 重要：将旋转后的图像设置到TextBox中，供RecProcess使用
                 detBox.setRotMat(rotatedMat);
                 detBox.setRotate(true);
 
@@ -375,22 +350,15 @@ public class ClsProcess implements AutoCloseable {
 
     /**
      * 180度旋转图像
-     *
-     * @param src 源图像
-     * @return 旋转后的图像
      */
     private Mat rotateImage180(Mat src) {
         Mat dst = new Mat();
-        Core.flip(src, dst, -1); // -1表示同时翻转x和y轴
+        Core.flip(src, dst, -1);
         return dst;
     }
 
     /**
      * 90度旋转图像
-     *
-     * @param src 源图像
-     * @param clockwise true:顺时针90度, false:逆时针90度
-     * @return 旋转后的图像
      */
     private Mat rotateImage90(Mat src, boolean clockwise) {
         Mat dst = new Mat();
@@ -404,20 +372,14 @@ public class ClsProcess implements AutoCloseable {
 
     /**
      * 从图像中裁剪文本框区域
-     *
-     * @param image 原始图像
-     * @param box 文本框四点坐标
-     * @return 裁剪后的图像
      */
     public static Mat cropTextBox(Mat image, List<Point> box) {
         if (image == null || image.empty() || box == null || box.size() < 4) {
             return null;
         }
         try {
-            // 使用透视变换获得校正后的文本图像
             return OpenCVUtil.perspectiveTransformCrop(image, box);
         } catch (Exception e) {
-            // 如果透视变换失败，回退到矩形裁剪
             return OpenCVUtil.rectangleCrop(image, box);
         }
     }
@@ -431,7 +393,6 @@ public class ClsProcess implements AutoCloseable {
             session.close();
             log.info("方向分类模型会话已关闭");
         }
-        // 注意：不要关闭env，因为可能被多个processor共享
     }
 
     /**

@@ -51,6 +51,20 @@ public class OCRConfig implements Serializable {
     private int recImgW = 320;
     @Builder.Default
     private int recBatchSize = 16;
+    /**
+     * 检测后处理 - 闭运算核大小
+     * 用于连接相邻的文本区域，默认2x2
+     * 值越大，连接效果越强，但可能过度合并
+     */
+    @Builder.Default
+    private int detCloseKernelSize = 2;
+
+    /**
+     * 检测后处理 - 膨胀核大小
+     * 用于扩大文本区域，默认2x2
+     */
+    @Builder.Default
+    private int detDilateKernelSize = 2;
 
     // ==================== 方向分类参数 ====================
 

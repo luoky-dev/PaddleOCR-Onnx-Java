@@ -5,56 +5,23 @@ import org.opencv.imgproc.Imgproc;
 import org.opencv.imgproc.Moments;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
  * OpenCV 资源管理工具类
- * <p>
- * 统一管理 OpenCV 各种类型（Mat、MatOfPoint、MatOfPoint2f、RotatedRect 等）的资源，
- * 提供自动释放机制，避免内存泄漏。
- * </p>
- *
- * <h3>使用示例：</h3>
- * <pre>{@code
- * // 1. 处理轮廓
- * OpenCVResource.withContours(binaryMat, contours -> {
- *     for (MatOfPoint contour : contours) {
- *         double area = Imgproc.contourArea(contour);
- *         // 处理轮廓...
- *     }
- * });
- *
- * // 2. 多边形近似
- * List<Point> box = OpenCVResource.approxPolyDP(points, epsilon, true);
- *
- * // 3. 计算最小外接矩形
- * RotatedRect rect = OpenCVResource.minAreaRect(points);
- *
- * // 4. 查找轮廓并返回结果
- * List<MatOfPoint> contours = OpenCVResource.findContours(binaryMat);
- * try {
- *     // 使用 contours...
- * } finally {
- *     OpenCVResource.release(contours);
- * }
- * }</pre>
  *
  * @author OCR Team
- * @version 1.0
+ * @version 1.1
  */
-
 public class OpenCVResource {
 
     // ==================== 基础资源管理 ====================
 
     /**
      * 安全执行操作，自动释放资源
-     *
-     * @param resource 需要管理的资源
-     * @param action   操作
-     * @param <T>      资源类型（必须是 Mat 的子类）
      */
     public static <T extends Mat> void use(T resource, Consumer<T> action) {
         try {
@@ -66,32 +33,12 @@ public class OpenCVResource {
 
     /**
      * 安全执行操作并返回结果，自动释放资源
-     *
-     * @param resource 需要管理的资源
-     * @param mapper   映射函数
-     * @param <T>      资源类型（必须是 Mat 的子类）
-     * @param <R>      返回类型
-     * @return 映射结果
      */
     public static <T extends Mat, R> R map(T resource, Function<T, R> mapper) {
         try {
             return mapper.apply(resource);
         } finally {
             release(resource);
-        }
-    }
-
-    /**
-     * 安全执行操作，自动释放多个资源
-     *
-     * @param action   操作
-     * @param resources 需要管理的资源
-     */
-    public static void useAll(Consumer<Mat[]> action, Mat... resources) {
-        try {
-            action.accept(resources);
-        } finally {
-            release(resources);
         }
     }
 
@@ -127,9 +74,6 @@ public class OpenCVResource {
 
     /**
      * 查找轮廓（自动释放 hierarchy）
-     *
-     * @param binaryMat 二值图像
-     * @return 轮廓列表（调用者负责释放）
      */
     public static List<MatOfPoint> findContours(Mat binaryMat) {
         List<MatOfPoint> contours = new ArrayList<>();
@@ -145,9 +89,6 @@ public class OpenCVResource {
 
     /**
      * 查找轮廓并处理（自动释放所有资源）
-     *
-     * @param binaryMat 二值图像
-     * @param processor 轮廓处理器
      */
     public static void withContours(Mat binaryMat, Consumer<List<MatOfPoint>> processor) {
         List<MatOfPoint> contours = findContours(binaryMat);
@@ -158,46 +99,10 @@ public class OpenCVResource {
         }
     }
 
-    /**
-     * 查找轮廓并返回处理结果（自动释放所有资源）
-     *
-     * @param binaryMat 二值图像
-     * @param processor 轮廓处理器
-     * @param <R>       返回类型
-     * @return 处理结果
-     */
-    public static <R> R mapContours(Mat binaryMat, Function<List<MatOfPoint>, R> processor) {
-        List<MatOfPoint> contours = findContours(binaryMat);
-        try {
-            return processor.apply(contours);
-        } finally {
-            release(contours);
-        }
-    }
-
-    /**
-     * 处理单个轮廓（自动释放）
-     *
-     * @param contour   轮廓
-     * @param processor 处理器
-     */
-    public static void withContour(MatOfPoint contour, Consumer<MatOfPoint> processor) {
-        try {
-            processor.accept(contour);
-        } finally {
-            release(contour);
-        }
-    }
-
     // ==================== 多边形近似相关 ====================
 
     /**
      * 多边形近似，返回 Point 列表（自动释放所有临时资源）
-     *
-     * @param points  原始点集
-     * @param epsilon 近似精度
-     * @param closed  是否闭合
-     * @return 近似后的点列表
      */
     public static List<Point> approxPolyDP(Point[] points, double epsilon, boolean closed) {
         MatOfPoint2f verticesMat = null;
@@ -218,31 +123,10 @@ public class OpenCVResource {
         }
     }
 
-    /**
-     * 多边形近似并处理结果（自动释放）
-     *
-     * @param points  原始点集
-     * @param epsilon 近似精度
-     * @param closed  是否闭合
-     * @param action  处理近似结果的操作
-     */
-    public static void useApproxPolyDP(Point[] points, double epsilon, boolean closed,
-                                       Consumer<List<Point>> action) {
-        List<Point> result = approxPolyDP(points, epsilon, closed);
-        try {
-            action.accept(result);
-        } finally {
-            // result 是 Point 列表，不需要释放
-        }
-    }
-
     // ==================== 最小外接矩形相关 ====================
 
     /**
      * 计算点集的最小外接矩形（自动释放临时资源）
-     *
-     * @param points 点集
-     * @return 最小外接矩形
      */
     public static RotatedRect minAreaRect(Point[] points) {
         MatOfPoint2f mat = null;
@@ -256,9 +140,6 @@ public class OpenCVResource {
 
     /**
      * 从轮廓计算最小外接矩形（自动释放临时资源）
-     *
-     * @param contour 轮廓
-     * @return 最小外接矩形
      */
     public static RotatedRect minAreaRectFromContour(MatOfPoint contour) {
         return map(contour, c -> {
@@ -275,10 +156,6 @@ public class OpenCVResource {
 
     /**
      * 计算点集的弧长/周长（自动释放临时资源）
-     *
-     * @param points 点集
-     * @param closed 是否闭合
-     * @return 弧长
      */
     public static double arcLength(Point[] points, boolean closed) {
         MatOfPoint2f mat = null;
@@ -290,13 +167,17 @@ public class OpenCVResource {
         }
     }
 
+    /**
+     * 计算轮廓周长
+     */
+    public static double arcLength(MatOfPoint contour, boolean closed) {
+        return map(contour, c -> Imgproc.arcLength(new MatOfPoint2f(c.toArray()), closed));
+    }
+
     // ==================== 轮廓面积计算 ====================
 
     /**
      * 计算轮廓面积（安全版本，不释放传入的轮廓）
-     *
-     * @param contour 轮廓
-     * @return 面积
      */
     public static double contourArea(MatOfPoint contour) {
         if (contour == null || contour.empty()) return 0;
@@ -307,9 +188,6 @@ public class OpenCVResource {
 
     /**
      * 获取旋转矩形的四个顶点
-     *
-     * @param rect 旋转矩形
-     * @return 四个顶点
      */
     public static Point[] getRotatedRectPoints(RotatedRect rect) {
         Point[] points = new Point[4];
@@ -317,78 +195,10 @@ public class OpenCVResource {
         return points;
     }
 
-    // ==================== 图像矩计算 ====================
-
-    /**
-     * 计算轮廓的矩（自动释放临时资源）
-     *
-     * @param contour 轮廓
-     * @return 矩
-     */
-    public static Moments moments(MatOfPoint contour) {
-        return map(contour, c -> Imgproc.moments(c));
-    }
-
-    // ==================== 凸包计算 ====================
-
-    /**
-     * 计算轮廓的凸包（自动释放临时资源）
-     *
-     * @param contour 轮廓
-     * @return 凸包点集（调用者负责释放）
-     */
-    public static MatOfPoint convexHull(MatOfPoint contour) {
-        MatOfInt hull = new MatOfInt();
-        try {
-            Imgproc.convexHull(contour, hull);
-            // 将索引转换为实际点
-            Point[] points = contour.toArray();
-            int[] hullIndices = hull.toArray();
-            Point[] hullPoints = new Point[hullIndices.length];
-            for (int i = 0; i < hullIndices.length; i++) {
-                hullPoints[i] = points[hullIndices[i]];
-            }
-            return new MatOfPoint(hullPoints);
-        } finally {
-            release(hull);
-        }
-    }
-
-    /**
-     * 计算轮廓的凸包并处理（自动释放所有资源）
-     *
-     * @param contour 轮廓
-     * @param action  处理凸包的操作
-     */
-    public static void withConvexHull(MatOfPoint contour, Consumer<MatOfPoint> action) {
-        MatOfPoint hull = convexHull(contour);
-        try {
-            action.accept(hull);
-        } finally {
-            release(hull);
-        }
-    }
-
-    // ==================== 轮廓周长计算 ====================
-
-    /**
-     * 计算轮廓周长
-     *
-     * @param contour 轮廓
-     * @param closed  是否闭合
-     * @return 周长
-     */
-    public static double arcLength(MatOfPoint contour, boolean closed) {
-        return map(contour, c -> Imgproc.arcLength(new MatOfPoint2f(c.toArray()), closed));
-    }
-
     // ==================== 边界框计算 ====================
 
     /**
      * 计算轮廓的边界框
-     *
-     * @param contour 轮廓
-     * @return 边界框
      */
     public static Rect boundingRect(MatOfPoint contour) {
         return map(contour, c -> Imgproc.boundingRect(c));
@@ -396,9 +206,6 @@ public class OpenCVResource {
 
     /**
      * 计算点集的边界框
-     *
-     * @param points 点集
-     * @return 边界框
      */
     public static Rect boundingRect(Point[] points) {
         if (points == null || points.length == 0) {
@@ -416,49 +223,157 @@ public class OpenCVResource {
                 (int) (maxX - minX), (int) (maxY - minY));
     }
 
-    // ==================== 点是否在轮廓内 ====================
 
     /**
-     * 判断点是否在轮廓内
+     * 多边形扩张（Unclip）- 完全对齐PaddleOCR官方实现
      *
-     * @param contour 轮廓
-     * @param point   点
-     * @return 是否在内部
+     * @param vertices  原始多边形顶点（按顺序排列）
+     * @param distance  扩张距离（正数向外扩张，负数向内收缩）
+     * @return 扩张后的多边形顶点列表
      */
-    public static boolean pointInContour(MatOfPoint2f contour, Point point) {
-        return map(contour, c -> Imgproc.pointPolygonTest(c, point, false) >= 0);
-    }
-
-    // ==================== 轮廓匹配 ====================
-
-    /**
-     * 计算两个轮廓的匹配度
-     *
-     * @param contour1 轮廓1
-     * @param contour2 轮廓2
-     * @param method   匹配方法
-     * @return 匹配度
-     */
-    public static double matchShapes(MatOfPoint contour1, MatOfPoint contour2, int method) {
-        MatOfPoint2f c1 = null, c2 = null;
-        try {
-            c1 = new MatOfPoint2f(contour1.toArray());
-            c2 = new MatOfPoint2f(contour2.toArray());
-            return Imgproc.matchShapes(c1, c2, method, 0.0);
-        } finally {
-            release(c1, c2);
+    public static List<Point> unclipPolygon(Point[] vertices, double distance) {
+        if (vertices == null || vertices.length < 3) {
+            return vertices == null ? new ArrayList<>() : Arrays.asList(vertices);
         }
+
+        if (Math.abs(distance) < 1e-6) {
+            return Arrays.asList(vertices);
+        }
+
+        int n = vertices.length;
+
+        // 1. 计算每条边的外扩向量
+        List<double[]> moveVecs = new ArrayList<>();
+
+        for (int i = 0; i < n; i++) {
+            Point p1 = vertices[i];
+            Point p2 = vertices[(i + 1) % n];
+
+            // 计算边的方向向量
+            double dx = p2.x - p1.x;
+            double dy = p2.y - p1.y;
+            double length = Math.hypot(dx, dy);
+
+            if (length < 1e-6) {
+                moveVecs.add(new double[]{0, 0});
+                continue;
+            }
+
+            // 单位方向向量
+            double ux = dx / length;
+            double uy = dy / length;
+
+            // 垂直向量（向外）
+            double vx = -uy;
+            double vy = ux;
+
+            // 扩张向量
+            moveVecs.add(new double[]{vx * distance, vy * distance});
+        }
+
+        // 2. 计算新顶点位置
+        List<Point> expanded = new ArrayList<>();
+
+        for (int i = 0; i < n; i++) {
+            double[] move1 = moveVecs.get(i);
+            double[] move2 = moveVecs.get((i + 1) % n);
+
+            Point p = vertices[(i + 1) % n];
+
+            // 两条边的扩张向量之和
+            double newX = p.x + move1[0] + move2[0];
+            double newY = p.y + move1[1] + move2[1];
+
+            expanded.add(new Point(newX, newY));
+        }
+
+        return expanded;
     }
 
-    // ==================== 便捷的组合方法 ====================
+    /**
+     * 多边形扩张（使用轮廓面积和周长计算距离）- PaddleOCR标准方法
+     *
+     * 官方算法：
+     * distance = area * unclip_ratio / perimeter
+     *
+     * @param contour      轮廓点集
+     * @param unclipRatio  扩张比例（官方默认2.5）
+     * @param minArea      最小面积阈值
+     * @return 扩张后的多边形顶点列表，如果不满足条件返回null
+     */
+    public static List<Point> unclipContour(MatOfPoint contour, float unclipRatio, double minArea) {
+        if (contour == null || contour.empty()) {
+            return null;
+        }
+
+        double area = contourArea(contour);
+        if (area < minArea) {
+            return null;
+        }
+
+        // 计算周长
+        double perimeter = arcLength(contour, true);
+        if (perimeter < 1e-6) {
+            return null;
+        }
+
+        // 计算扩张距离：area * unclip_ratio / perimeter
+        double distance = area * unclipRatio / perimeter;
+
+        // 获取轮廓顶点
+        Point[] points = contour.toArray();
+
+        // 执行扩张
+        return unclipPolygon(points, distance);
+    }
+
+    /**
+     * 多边形扩张的另一种实现（基于旋转矩形）
+     * 适用于矩形文本框的快速扩张
+     *
+     * @param rect         旋转矩形
+     * @param unclipRatio  扩张比例
+     * @return 扩张后的四点坐标
+     */
+    public static List<Point> unclipRotatedRect(RotatedRect rect, float unclipRatio) {
+        Point[] vertices = getRotatedRectPoints(rect);
+
+        // 计算矩形面积和周长
+        double area = rect.size.area();
+        double perimeter = 2 * (rect.size.width + rect.size.height);
+        double distance = area * unclipRatio / perimeter;
+
+        // 扩张矩形（向四个方向扩展）
+        List<Point> expanded = new ArrayList<>();
+        for (Point p : vertices) {
+            // 计算从中心到顶点的方向
+            double dx = p.x - rect.center.x;
+            double dy = p.y - rect.center.y;
+            double len = Math.hypot(dx, dy);
+            if (len > 1e-6) {
+                double scale = 1 + distance / len;
+                expanded.add(new Point(
+                        rect.center.x + dx * scale,
+                        rect.center.y + dy * scale
+                ));
+            } else {
+                expanded.add(p);
+            }
+        }
+
+        return expanded;
+    }
+
+    // ==================== 完整的文本框提取流程 ====================
 
     /**
      * 从轮廓提取文本框（完整流程）
+     * 包含：面积过滤 → 最小外接矩形 → unclip扩张 → 多边形近似
      *
-     * @param contour     轮廓
-     * @param unclipRatio 扩张比例
-     * @param minArea     最小面积阈值
-     * @return 文本框点集，如果不满足条件返回 null
+     * @param contour      轮廓
+     * @param unclipRatio  扩张比例（PaddleOCR默认2.5）
+     * @param minArea      最小面积阈值（官方默认3）
+     * @return 文本框点集（4个点），如果不满足条件返回 null
      */
     public static List<Point> extractTextbox(MatOfPoint contour, float unclipRatio, double minArea) {
         double area = contourArea(contour);
@@ -466,43 +381,44 @@ public class OpenCVResource {
             return null;
         }
 
-        // 计算最小外接矩形
-        RotatedRect rect = minAreaRectFromContour(contour);
-        Point[] vertices = getRotatedRectPoints(rect);
+        // 方法1: 使用轮廓直接扩张（更精确，推荐）
+        List<Point> expanded = unclipContour(contour, unclipRatio, minArea);
 
-        // 计算扩张距离
-        double unclipDist = calculateUnclipDistance(rect.size, unclipRatio);
-        if (unclipDist > 0) {
-            List<Point> expanded = unclipPolygon(vertices, unclipDist);
-            if (expanded.size() >= 4) {
-                vertices = expanded.toArray(new Point[0]);
-            }
+        if (expanded == null || expanded.size() < 4) {
+            // 降级：使用旋转矩形方式
+            RotatedRect rect = minAreaRectFromContour(contour);
+            expanded = unclipRotatedRect(rect, unclipRatio);
         }
 
-        // 多边形近似
-        double epsilon = 0.01 * arcLength(vertices, true);
-        List<Point> box = approxPolyDP(vertices, epsilon, true);
+        if (expanded == null || expanded.size() < 4) {
+            return null;
+        }
+
+        // 多边形近似，确保得到4个点
+        double epsilon = 0.01 * arcLength(expanded.toArray(new Point[0]), true);
+        List<Point> box = approxPolyDP(expanded.toArray(new Point[0]), epsilon, true);
 
         // 确保是4个点
         if (box.size() == 4) {
             return box;
         }
+
+        // 如果近似后不是4个点，尝试直接取外接矩形
+        if (box.size() > 4) {
+            // 取凸包或使用最小外接矩形
+            RotatedRect rect = minAreaRect(expanded.toArray(new Point[0]));
+            return Arrays.asList(getRotatedRectPoints(rect));
+        }
+
         return null;
     }
 
-    // 辅助方法（需要根据实际实现）
-    private static double calculateUnclipDistance(Size size, float ratio) {
-        double area = size.width * size.height;
-        return Math.sqrt(area) * ratio;
-    }
-
-    private static List<Point> unclipPolygon(Point[] vertices, double distance) {
-        // 实现多边形扩张逻辑
-        // 这里只是一个示例，需要根据实际算法实现
-        List<Point> result = new ArrayList<>();
-        for (Point p : vertices) {
-            result.add(p);
-        }
-        return result;
+    /**
+     * 计算两点间距离
+     */
+    private static double distance(Point p1, Point p2) {
+        double dx = p1.x - p2.x;
+        double dy = p1.y - p2.y;
+        return Math.sqrt(dx * dx + dy * dy);
     }
 }

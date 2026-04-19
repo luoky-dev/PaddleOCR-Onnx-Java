@@ -175,16 +175,26 @@ public class DetProcess implements AutoCloseable {
     }
 
     /**
-     * DB后处理算法（与官方保持一致）
+     * DB后处理算法
      */
     private List<List<Point>> dbPostProcess(float[][] probMap, ModelProcessContext context) {
         float dilationRatio = config.getDetDilationRatio();
-        int kernelSize = Math.max(1, (int) dilationRatio);
+
+        // 使用可配置的核大小
+        int dilateKernelSize = Math.max(1, (int) dilationRatio);
+        if (config.getDetDilateKernelSize() > 0) {
+            dilateKernelSize = config.getDetDilateKernelSize();
+        }
+
+        int closeKernelSize = config.getDetCloseKernelSize();
+        if (closeKernelSize <= 0) {
+            closeKernelSize = 2;  // 默认值
+        }
 
         return MatPipeline.fromMap(probMap)
                 .binary(config.getDetDbThresh())
-                .dilate(new Size(kernelSize, kernelSize))
-                .close(new Size(2, 2))
+                .dilate(new Size(dilateKernelSize, dilateKernelSize))
+                .close(new Size(closeKernelSize, closeKernelSize))
                 .map(mat -> {
                     List<MatOfPoint> contours = findAndSortContours(mat);
                     log.debug("找到轮廓数量: {}", contours.size());
@@ -220,11 +230,15 @@ public class DetProcess implements AutoCloseable {
      */
     private List<List<Point>> extractTextBoxes(List<MatOfPoint> contours) {
         List<List<Point>> allBoxes = new ArrayList<>();
+        float unclipRatio = config.getDetDbUnclipRatio();
+        int minBoxArea = config.getMinBoxArea() > 0 ? config.getMinBoxArea() : 3;
+
         for (MatOfPoint contour : contours) {
+            // 使用修复后的 extractTextbox 方法，现在包含完整的 unclip 逻辑
             List<Point> box = OpenCVResource.extractTextbox(
                     contour,
-                    config.getDetDbUnclipRatio(),
-                    DEFAULT_MIN_BOX_AREA
+                    unclipRatio,
+                    minBoxArea
             );
             if (box != null && box.size() == 4) {
                 // 确保点是顺时针顺序（官方要求）
