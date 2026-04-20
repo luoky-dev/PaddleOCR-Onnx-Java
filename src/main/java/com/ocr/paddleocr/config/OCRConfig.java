@@ -20,13 +20,13 @@ public class OCRConfig implements Serializable {
     @Builder.Default
     private String modelDir = "src/main/resources/models";
     @Builder.Default
-    private String detModelPath = "C:\\Users\\26221\\Desktop\\PaddleOCR-Onnx-Java\\src\\main\\java\\resources\\models\\det_model.onnx";
+    private String detModelPath = "src/main/java/resources/models/chi/det_model.onnx";
     @Builder.Default
-    private String clsModelPath = "C:\\Users\\26221\\Desktop\\PaddleOCR-Onnx-Java\\src\\main\\java\\resources\\models\\cls_model.onnx";
+    private String clsModelPath = "src/main/java/resources/models/chi/cls_model.onnx";
     @Builder.Default
-    private String recModelPath = "C:\\Users\\26221\\Desktop\\PaddleOCR-Onnx-Java\\src\\main\\java\\resources\\models\\rec_model.onnx";
+    private String recModelPath = "src/main/java/resources/models/chi/rec_model.onnx";
     @Builder.Default
-    private String dictPath = "C:\\Users\\26221\\Desktop\\PaddleOCR-Onnx-Java\\src\\main\\java\\resources\\models\\latin_dict.txt";
+    private String dictPath = "src/main/java/resources/models/chi/ppocr_keys_v1.txt";
 
     // ==================== 检测模型参数 ====================
 
@@ -125,7 +125,7 @@ public class OCRConfig implements Serializable {
     // ==================== 语言配置 ====================
 
     @Builder.Default
-    private String lang = "en";
+    private String lang = "chi";
 
     // ==================== 输出配置 ====================
 

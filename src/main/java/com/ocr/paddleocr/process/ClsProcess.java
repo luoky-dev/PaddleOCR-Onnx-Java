@@ -8,6 +8,7 @@ import com.ocr.paddleocr.utils.MatPipeline;
 import com.ocr.paddleocr.utils.OnnxUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.opencv.core.Core;
+import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 
 import java.util.*;
@@ -110,9 +111,9 @@ public class ClsProcess implements AutoCloseable {
      */
     private void classifyBatch(ModelProcessContext context) throws OrtException {
         List<Mat> images = new ArrayList<>();
-
+        List<TextBox> clsBoxes = context.getBoxes();
         // 1. 预处理
-        context.getBoxes().forEach(box -> images.add(preprocess(box.getRawMat())));
+        clsBoxes.forEach(box -> images.add(preprocess(box.getRawMat())));
 
         // 2. 创建批量输入Tensor
         OnnxTensor inputTensor = OnnxUtil.createBatchInputTensor(images, env);
@@ -146,11 +147,14 @@ public class ClsProcess implements AutoCloseable {
      * 预处理：转RGB + 缩放到固定尺寸 + 归一化
      */
     private Mat preprocess(Mat image) {
-        return MatPipeline.fromMat(image)
+        Mat result = MatPipeline.fromMatCopy(image)
                 .toRGB()
                 .resize(MODEL_INPUT_WIDTH, MODEL_INPUT_HEIGHT)
                 .normalize()
                 .get();
+        log.info("分类预处理后图像类型: {}", result.type());
+        log.info("CV_32FC3 = {}, 实际类型 = {}", CvType.CV_32FC3, result.type());
+        return result;
     }
 
     /**

@@ -133,6 +133,44 @@ public class MatPipeline {
         return fromMat(image);
     }
 
+    // ==================== 静态工厂方法（深拷贝版本） ====================
+
+    /**
+     * 从已有的 Mat 创建管道（深拷贝）
+     * <p>传入的 Mat 不会被释放，调用者继续拥有所有权</p>
+     *
+     * @param mat 已有的 Mat
+     * @return MatPipeline 实例
+     */
+    public static MatPipeline fromMatCopy(Mat mat) {
+        Mat copy = new Mat();
+        mat.copyTo(copy);
+        return create().load(copy);
+    }
+
+    /**
+     * 从概率图数组创建管道（深拷贝）
+     * <p>创建独立的 Mat，不影响原始数组</p>
+     *
+     * @param probMap 概率图二维数组
+     * @return MatPipeline 实例
+     */
+    public static MatPipeline fromMapCopy(float[][] probMap) {
+        if (probMap == null || probMap.length == 0 || probMap[0].length == 0) {
+            return create().load(new Mat());
+        }
+
+        int height = probMap.length;
+        int width = probMap[0].length;
+        Mat mat = new Mat(height, width, CvType.CV_32FC1);
+
+        for (int i = 0; i < height; i++) {
+            mat.put(i, 0, probMap[i]); // 一次写入整行
+        }
+
+        return create().load(mat);
+    }
+
     // ==================== 加载方法 ====================
 
     /**
@@ -277,7 +315,6 @@ public class MatPipeline {
      * 类型转换
      */
     public MatPipeline convertTo(int rtype, double alpha, double beta) {
-        System.out.println("convertTo 被调用");
         return apply(mat -> {
             Mat result = new Mat();
             mat.convertTo(result, rtype, alpha, beta);
