@@ -19,7 +19,6 @@ import java.util.*;
 
 /**
  * 文本识别处理器
- *
  */
 @Slf4j
 public class RecProcess implements AutoCloseable {

@@ -73,6 +73,11 @@ import java.util.function.Function;
  */
 public class MatPipeline {
 
+    static {
+        // 加载OpenCV库
+        nu.pattern.OpenCV.loadLocally();
+    }
+
     private Mat current;
     private final List<Mat> resources = new ArrayList<>();
 
@@ -661,6 +666,127 @@ public class MatPipeline {
             rotMat.release();
             return result;
         });
+    }
+
+    // ==================== 类型转换方法 ====================
+
+    /**
+     * 转换为 8位单通道（灰度/二值图像）
+     * 适用于：轮廓查找、形态学操作、二值化
+     */
+    public MatPipeline toCV8UC1() {
+        return convertTo(CvType.CV_8UC1);
+    }
+
+    /**
+     * 转换为 8位3通道（BGR彩色图像）
+     * 适用于：显示、保存、彩色图像处理
+     */
+    public MatPipeline toCV8UC3() {
+        return convertTo(CvType.CV_8UC3);
+    }
+
+    /**
+     * 转换为 8位4通道（BGRA图像）
+     * 适用于：带透明通道的图像
+     */
+    public MatPipeline toCV8UC4() {
+        return convertTo(CvType.CV_8UC4);
+    }
+
+    /**
+     * 转换为 32位浮点单通道（概率图/深度图）
+     * 适用于：模型输出、概率计算
+     */
+    public MatPipeline toCV32FC1() {
+        return convertTo(CvType.CV_32FC1);
+    }
+
+    /**
+     * 转换为 32位浮点3通道（归一化彩色图像）
+     * 适用于：深度学习模型输入
+     */
+    public MatPipeline toCV32FC3() {
+        return convertTo(CvType.CV_32FC3);
+    }
+
+    /**
+     * 转换为 32位浮点4通道
+     * 适用于：带透明通道的归一化图像
+     */
+    public MatPipeline toCV32FC4() {
+        return convertTo(CvType.CV_32FC4);
+    }
+
+    /**
+     * 转换为 64位浮点单通道
+     * 适用于：高精度计算
+     */
+    public MatPipeline toCV64FC1() {
+        return convertTo(CvType.CV_64FC1);
+    }
+
+    /**
+     * 转换为 16位有符号单通道
+     * 适用于：梯度计算
+     */
+    public MatPipeline toCV16SC1() {
+        return convertTo(CvType.CV_16SC1);
+    }
+
+    /**
+     * 转换为 16位无符号单通道
+     * 适用于：深度图像
+     */
+    public MatPipeline toCV16UC1() {
+        return convertTo(CvType.CV_16UC1);
+    }
+
+    /**
+     * 转换为指定类型（使用 OpenCV 类型常量）
+     * @param targetType 目标类型，如 CvType.CV_8UC1, CvType.CV_32FC3 等
+     * @return this
+     *
+     * <p>使用示例：
+     * <pre>{@code
+     * // 转换为 8位单通道（二值图像）
+     * pipeline.convertTo(CvType.CV_8UC1)
+     *
+     * // 转换为 32位浮点3通道（归一化图像）
+     * pipeline.convertTo(CvType.CV_32FC3)
+     * }</pre>
+     */
+    public MatPipeline convertTo(int targetType) {
+        return apply(mat -> {
+            if (mat.type() == targetType) {
+                Mat result = new Mat();
+                mat.copyTo(result);
+                return result;
+            }
+            Mat result = new Mat();
+            mat.convertTo(result, targetType);
+            return result;
+        });
+    }
+
+    /**
+     * 转换为指定深度和通道数
+     * @param depth 深度 (CvType.CV_8U, CV_16U, CV_32F, CV_64F)
+     * @param channels 通道数 (1, 2, 3, 4)
+     * @return this
+     *
+     * <p>使用示例：
+     * <pre>{@code
+     * // 转换为 8位3通道
+     * pipeline.convertTo(CvType.CV_8U, 3)
+     *
+     * // 转换为 32位1通道
+     * pipeline.convertTo(CvType.CV_32F, 1)
+     * }</pre>
+     */
+    public MatPipeline convertTo(int depth, int channels) {
+        int targetType = CvType.makeType(depth, channels);
+        return convertTo(targetType);
     }
 
     // ==================== 私有辅助方法 ====================

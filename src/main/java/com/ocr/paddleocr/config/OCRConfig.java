@@ -19,10 +19,14 @@ public class OCRConfig implements Serializable {
 
     @Builder.Default
     private String modelDir = "src/main/resources/models";
-    private String detModelPath;
-    private String clsModelPath;
-    private String recModelPath;
-    private String dictPath;
+    @Builder.Default
+    private String detModelPath = "C:\\Users\\26221\\Desktop\\PaddleOCR-Onnx-Java\\src\\main\\java\\resources\\models\\det_model.onnx";
+    @Builder.Default
+    private String clsModelPath = "C:\\Users\\26221\\Desktop\\PaddleOCR-Onnx-Java\\src\\main\\java\\resources\\models\\cls_model.onnx";
+    @Builder.Default
+    private String recModelPath = "C:\\Users\\26221\\Desktop\\PaddleOCR-Onnx-Java\\src\\main\\java\\resources\\models\\rec_model.onnx";
+    @Builder.Default
+    private String dictPath = "C:\\Users\\26221\\Desktop\\PaddleOCR-Onnx-Java\\src\\main\\java\\resources\\models\\latin_dict.txt";
 
     // ==================== 检测模型参数 ====================
 
@@ -42,6 +46,29 @@ public class OCRConfig implements Serializable {
     private int detImageWidth = 960;
     @Builder.Default
     private boolean detUsePolygon = false;
+
+    // ==================== NMS 配置（新增） ====================
+
+    /**
+     * NMS 类型
+     * - "opencv": 使用 OpenCV DNN NMS（推荐，速度更快）
+     * - "custom": 使用自定义 NMS
+     * - "auto": 自动选择（优先 OpenCV，失败时降级到自定义）
+     */
+    @Builder.Default
+    private String nmsType = "auto";
+
+    /**
+     * NMS 置信度阈值（仅对 OpenCV NMS 有效）
+     */
+    @Builder.Default
+    private float nmsScoreThreshold = 0.5f;
+
+    /**
+     * NMS 最多保留的框数量（0 表示不限制）
+     */
+    @Builder.Default
+    private int nmsTopK = 1000;
 
     // ==================== 识别模型参数 ====================
 
@@ -171,41 +198,41 @@ public class OCRConfig implements Serializable {
 
     // ==================== 便捷方法 ====================
 
-    public String getDetModelPath() {
-        if (detModelPath == null || detModelPath.isEmpty()) {
-            return modelDir + "/det_model.onnx";
-        }
-        return detModelPath;
-    }
-
-    public String getClsModelPath() {
-        if (clsModelPath == null || clsModelPath.isEmpty()) {
-            return modelDir + "/cls_model.onnx";
-        }
-        return clsModelPath;
-    }
-
-    public String getRecModelPath() {
-        if (recModelPath == null || recModelPath.isEmpty()) {
-            return modelDir + "/rec_model.onnx";
-        }
-        return recModelPath;
-    }
-
-    public String getDictPath() {
-        if (dictPath == null || dictPath.isEmpty()) {
-            return modelDir + "/" + lang + "_dict.txt";
-        }
-        return dictPath;
-    }
-
-    public int getEffectiveDetImageHeight() {
-        return detImageHeight > 0 ? detImageHeight : detMaxSideLen;
-    }
-
-    public int getEffectiveDetImageWidth() {
-        return detImageWidth > 0 ? detImageWidth : detMaxSideLen;
-    }
+//    public String getDetModelPath() {
+//        if (detModelPath == null || detModelPath.isEmpty()) {
+//            return modelDir + "/det_model.onnx";
+//        }
+//        return detModelPath;
+//    }
+//
+//    public String getClsModelPath() {
+//        if (clsModelPath == null || clsModelPath.isEmpty()) {
+//            return modelDir + "/cls_model.onnx";
+//        }
+//        return clsModelPath;
+//    }
+//
+//    public String getRecModelPath() {
+//        if (recModelPath == null || recModelPath.isEmpty()) {
+//            return modelDir + "/rec_model.onnx";
+//        }
+//        return recModelPath;
+//    }
+//
+//    public String getDictPath() {
+//        if (dictPath == null || dictPath.isEmpty()) {
+//            return modelDir + "/" + lang + "_dict.txt";
+//        }
+//        return dictPath;
+//    }
+//
+//    public int getEffectiveDetImageHeight() {
+//        return detImageHeight > 0 ? detImageHeight : detMaxSideLen;
+//    }
+//
+//    public int getEffectiveDetImageWidth() {
+//        return detImageWidth > 0 ? detImageWidth : detMaxSideLen;
+//    }
 
     /**
      * 设置可视化模式

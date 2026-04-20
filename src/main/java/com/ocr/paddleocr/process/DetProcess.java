@@ -19,7 +19,6 @@ import java.util.stream.Collectors;
 
 /**
  * 文本检测处理器
- * 完全兼容 PaddleOCR 官方实现
  */
 @Slf4j
 public class DetProcess implements AutoCloseable {
@@ -107,44 +106,60 @@ public class DetProcess implements AutoCloseable {
      * DB 检测模型预处理（完全遵循 PaddleOCR 官方策略）
      */
     private void detPreprocess(ModelProcessContext context) {
-        int maxSideLen = config.getDetMaxSideLen();
-        int align = 32;
+        // 模型要求的固定输入尺寸（从配置中读取）
+        int modelInputHeight = config.getDetImageHeight();  // 应该是 960
+        int modelInputWidth = config.getDetImageWidth();    // 应该是 960
 
         int originalWidth = context.getOriginalWidth();
         int originalHeight = context.getOriginalHeight();
-        int maxOriginalSide = Math.max(originalWidth, originalHeight);
 
-        // 1. 计算缩放比例（只缩小，不放大）
-        float scale = 1.0f;
-        if (maxOriginalSide > maxSideLen) {
-            scale = (float) maxSideLen / maxOriginalSide;
-        }
+        // 计算缩放比例（保持长宽比，缩放到模型输入尺寸内）
+        float scale = Math.min(
+                (float) modelInputWidth / originalWidth,
+                (float) modelInputHeight / originalHeight
+        );
 
-        // 2. 计算缩放后尺寸
+        // 计算缩放后的尺寸
         int newWidth = (int) (originalWidth * scale);
         int newHeight = (int) (originalHeight * scale);
 
-        // 3. 对齐到32的倍数（向下取整）
-        newWidth = newWidth - (newWidth % align);
-        newHeight = newHeight - (newHeight % align);
+        // 确保尺寸不小于1
+        newWidth = Math.max(newWidth, 1);
+        newHeight = Math.max(newHeight, 1);
 
-        // 4. 确保最小尺寸（防止为0）
-        newWidth = Math.max(newWidth, align);
-        newHeight = Math.max(newHeight, align);
+        // 创建缩放后的图像
+        Mat resized = new Mat();
+        Imgproc.resize(context.getRawMat(), resized, new Size(newWidth, newHeight));
 
-        // 5. 图像处理（保持 BGR 通道顺序，官方检测模型使用BGR）
-        //    官方检测模型只做1/255归一化，不减均值不减标准差
-        Mat processed = preprocess(context.getRawMat(), newWidth, newHeight);
+        // 创建目标尺寸的空白图像（黑色填充）
+        Mat padded = new Mat(modelInputHeight, modelInputWidth, resized.type(), new Scalar(0, 0, 0));
 
-        // 6. 记录预处理信息
-        log.debug("预处理完成: 原始图像宽高 {}x{} -> 预处理后宽高 {}x{} (缩放比例: scale={}, 最大边长限制: maxSideLen={})",
-                context.getOriginalWidth(), context.getOriginalHeight(), newWidth, newHeight,
-                String.format("%.3f", scale), maxSideLen);
+        // 将缩放后的图像放到中心位置
+        int xOffset = (modelInputWidth - newWidth) / 2;
+        int yOffset = (modelInputHeight - newHeight) / 2;
+        resized.copyTo(padded.submat(yOffset, yOffset + newHeight, xOffset, xOffset + newWidth));
 
-        context.setDetPrepWidth(newWidth);
-        context.setDetPrepHeight(newHeight);
-        context.setDetPrepMat(processed);
+        // 归一化到 [0, 1] 范围（检测模型需要）
+        Mat floatMat = new Mat();
+        padded.convertTo(floatMat, CvType.CV_32FC3, 1.0 / 255.0);
+
+        // 释放临时资源
+        resized.release();
+        padded.release();
+
+        // 保存预处理结果
+        context.setDetPrepWidth(modelInputWidth);
+        context.setDetPrepHeight(modelInputHeight);
+        context.setDetPrepMat(floatMat);
+
+        // 保存缩放比例和偏移量（用于后续坐标转换）
         context.setScale(scale);
+//        context.setDetPadTop(yOffset);
+//        context.setDetPadLeft(xOffset);
+
+        log.debug("预处理完成: 原始 {}x{} -> 缩放 {}x{} -> 填充 {}x{}, 缩放比例={}",
+                originalWidth, originalHeight, newWidth, newHeight,
+                modelInputWidth, modelInputHeight, String.format("%.3f", scale));
     }
 
     /**
@@ -178,36 +193,75 @@ public class DetProcess implements AutoCloseable {
      * DB后处理算法
      */
     private List<List<Point>> dbPostProcess(float[][] probMap, ModelProcessContext context) {
-        float dilationRatio = config.getDetDilationRatio();
+        float boxThresh = config.getDetDbBoxThresh();
+        float unclipRatio = config.getDetDbUnclipRatio();
+        int minBoxArea = config.getMinBoxArea() > 0 ? config.getMinBoxArea() : 10;
 
-        // 使用可配置的核大小
-        int dilateKernelSize = Math.max(1, (int) dilationRatio);
-        if (config.getDetDilateKernelSize() > 0) {
-            dilateKernelSize = config.getDetDilateKernelSize();
-        }
+        int height = probMap.length;
+        int width = probMap[0].length;
 
-        int closeKernelSize = config.getDetCloseKernelSize();
-        if (closeKernelSize <= 0) {
-            closeKernelSize = 2;  // 默认值
+        // 添加：打印概率图统计信息
+        float minProb = Float.MAX_VALUE;
+        float maxProb = Float.MIN_VALUE;
+        float sumProb = 0;
+        for (float[] floats : probMap) {
+            for (int j = 0; j < width; j++) {
+                float val = floats[j];
+                minProb = Math.min(minProb, val);
+                maxProb = Math.max(maxProb, val);
+                sumProb += val;
+            }
         }
+        float meanProb = sumProb / (height * width);
+        log.info("概率图统计: 尺寸={}x{}, 范围=[{}, {}], 均值={}",
+                height, width, minProb, maxProb, meanProb);
+        log.info("当前阈值: boxThresh={}, unclipRatio={}, minBoxArea={}",
+                boxThresh, unclipRatio, minBoxArea);
 
         return MatPipeline.fromMap(probMap)
-                .binary(config.getDetDbThresh())
-                .dilate(new Size(dilateKernelSize, dilateKernelSize))
-                .close(new Size(closeKernelSize, closeKernelSize))
+                .peek(mat -> {
+                    // 打印二值化前的统计
+                    log.debug("概率图类型: {}", mat.type());
+                })
+                .binary(boxThresh)
+                .peek(mat -> {
+                    // 打印二值化后的白点数量
+                    int whiteCount = Core.countNonZero(mat);
+                    log.info("二值化后白点数量: {} / {} ({}%)",
+                            whiteCount, height * width, 100.0 * whiteCount / (height * width));
+                })
+                .toCV8UC1()
+                .peek(mat -> {
+                    int whiteCount = Core.countNonZero(mat);
+                    log.info("转换CV8UC1后白点数量: {}", whiteCount);
+                })
+                .dilate(new Size(config.getDetDilateKernelSize(), config.getDetDilateKernelSize()))
+                .peek(mat -> {
+                    int whiteCount = Core.countNonZero(mat);
+                    log.info("膨胀后白点数量: {}", whiteCount);
+                })
+                .close(new Size(config.getDetCloseKernelSize(), config.getDetCloseKernelSize()))
+                .peek(mat -> {
+                    int whiteCount = Core.countNonZero(mat);
+                    log.info("闭运算后白点数量: {}", whiteCount);
+                })
                 .map(mat -> {
                     List<MatOfPoint> contours = findAndSortContours(mat);
-                    log.debug("找到轮廓数量: {}", contours.size());
+                    log.info("找到轮廓数量: {}", contours.size());
+
                     if (contours.isEmpty()) {
                         return new ArrayList<>();
                     }
+
                     List<List<Point>> allBoxes = extractTextBoxes(contours);
+                    log.info("提取文本框数量: {}", allBoxes.size());
+
                     List<List<Point>> nmsBoxes = nms(allBoxes);
-                    log.debug("NMS后剩余 {} 个文本框", nmsBoxes.size());
+                    log.info("NMS后文本框数量: {}", nmsBoxes.size());
+
                     return restoreBoxesToOriginal(nmsBoxes, context);
                 });
     }
-
     /**
      * 查找并排序轮廓（官方按面积降序）
      */
@@ -225,39 +279,72 @@ public class DetProcess implements AutoCloseable {
         return contours;
     }
 
-    /**
-     * 从轮廓列表中提取文本框
-     */
     private List<List<Point>> extractTextBoxes(List<MatOfPoint> contours) {
         List<List<Point>> allBoxes = new ArrayList<>();
         float unclipRatio = config.getDetDbUnclipRatio();
-        int minBoxArea = config.getMinBoxArea() > 0 ? config.getMinBoxArea() : 3;
+        int minBoxArea = config.getMinBoxArea() > 0 ? config.getMinBoxArea() : 3;  // 降低到 3
+
+        int skippedByArea = 0;
+        int skippedByPoints = 0;
+        int skippedByBox = 0;
 
         for (MatOfPoint contour : contours) {
-            // 使用修复后的 extractTextbox 方法，现在包含完整的 unclip 逻辑
-            List<Point> box = OpenCVResource.extractTextbox(
-                    contour,
-                    unclipRatio,
-                    minBoxArea
-            );
-            if (box != null && box.size() == 4) {
-                // 确保点是顺时针顺序（官方要求）
-                List<Point> orderedBox = OpenCVUtil.orderPoints(box);
-                allBoxes.add(orderedBox);
+            double area = Imgproc.contourArea(contour);
+            if (area < minBoxArea) {
+                skippedByArea++;
+                continue;
+            }
+
+            // 检查轮廓点数
+            Point[] points = contour.toArray();
+            if (points.length < 4) {  // 降低到 4
+                skippedByPoints++;
+                continue;
+            }
+
+            log.debug("轮廓面积: {}, 点数: {}", area, points.length);
+
+            try {
+                List<Point> box = OpenCVResource.extractTextbox(
+                        contour,
+                        unclipRatio,
+                        minBoxArea
+                );
+
+                if (box != null && box.size() == 4) {
+                    List<Point> orderedBox = OpenCVUtil.orderPoints(box);
+                    allBoxes.add(orderedBox);
+                    log.debug("成功提取文本框: 面积={}", area);
+                } else {
+                    skippedByBox++;
+                    log.debug("extractTextbox 返回 null 或点数不对: {}", box != null ? box.size() : "null");
+                }
+            } catch (Exception e) {
+                log.debug("extractTextbox 异常: {}", e.getMessage());
+                skippedByBox++;
             }
         }
+
+        log.info("文本框提取统计: 总面积过滤={}, 点数不足={}, 提取失败={}, 成功={}",
+                skippedByArea, skippedByPoints, skippedByBox, allBoxes.size());
+
         return allBoxes;
     }
 
-  
+
 
     /**
      * NMS非极大值抑制
      */
     private List<List<Point>> nms(List<List<Point>> boxes) {
+        float iouThreshold = config.getNmsIouThreshold();
+
         if (boxes.size() < 2) {
+            log.info("NMS: 文本框数量少于2，跳过");
             return boxes;
         }
+
+        log.info("NMS开始: 输入={}, IoU阈值={}", boxes.size(), iouThreshold);
 
         List<Rect> rects = new ArrayList<>();
         List<Double> areas = new ArrayList<>();
@@ -265,16 +352,22 @@ public class DetProcess implements AutoCloseable {
             Rect rect = OpenCVUtil.getBoundingRect(box);
             rects.add(rect);
             areas.add(rect.area());
+            log.info("文本框: rect={}, area={}", rect, rect.area());
         }
 
+        // 按面积降序排序
         List<Integer> indices = new ArrayList<>();
         for (int i = 0; i < boxes.size(); i++) {
             indices.add(i);
         }
         indices.sort((a, b) -> Double.compare(areas.get(b), areas.get(a)));
 
+        log.info("NMS排序后前5个面积: {}",
+                indices.stream().limit(5).map(areas::get).collect(Collectors.toList()));
+
         boolean[] suppressed = new boolean[boxes.size()];
         List<List<Point>> result = new ArrayList<>();
+        int suppressedCount = 0;
 
         for (int i = 0; i < indices.size(); i++) {
             int idx = indices.get(i);
@@ -291,11 +384,17 @@ public class DetProcess implements AutoCloseable {
                 }
 
                 float iou = OpenCVUtil.computeIoU(rects.get(idx), rects.get(otherIdx));
-                if (iou > DEFAULT_NMS_IOU_THRESHOLD) {
+
+                if (iou > iouThreshold) {
                     suppressed[otherIdx] = true;
+                    suppressedCount++;
+                    log.trace("抑制文本框: iou={}, idx={}", iou, otherIdx);
                 }
             }
         }
+
+        log.info("NMS完成: 输入={}, 输出={}, 抑制={}, IoU阈值={}",
+                boxes.size(), result.size(), suppressedCount, iouThreshold);
 
         return result;
     }

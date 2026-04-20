@@ -16,10 +16,6 @@ import java.util.*;
 
 /**
  * 文本方向分类处理器
- * 对应官方 Classifier
- * 支持批量处理优化
- *
- * @author PaddleOCR Team
  */
 @Slf4j
 public class ClsProcess implements AutoCloseable {

@@ -142,10 +142,27 @@ public class OpenCVResource {
      * 从轮廓计算最小外接矩形（自动释放临时资源）
      */
     public static RotatedRect minAreaRectFromContour(MatOfPoint contour) {
+        if (contour == null || contour.empty()) {
+            return null;
+        }
+
+        Point[] points = contour.toArray();
+        if (points.length < 5) {
+            // 点数不足，无法计算有效的最小外接矩形
+            return null;
+        }
+
         return map(contour, c -> {
             MatOfPoint2f contour2f = new MatOfPoint2f(c.toArray());
             try {
+                // 检查轮廓2f是否有效
+                if (contour2f.empty() || contour2f.total() < 5) {
+                    return null;
+                }
                 return Imgproc.minAreaRect(contour2f);
+            } catch (Exception e) {
+                System.err.println("minAreaRect 计算失败: " + e.getMessage());
+                return null;
             } finally {
                 release(contour2f);
             }
@@ -376,38 +393,61 @@ public class OpenCVResource {
      * @return 文本框点集（4个点），如果不满足条件返回 null
      */
     public static List<Point> extractTextbox(MatOfPoint contour, float unclipRatio, double minArea) {
+        if (contour == null || contour.empty()) {
+            return null;
+        }
+
         double area = contourArea(contour);
         if (area < minArea) {
             return null;
         }
 
-        // 方法1: 使用轮廓直接扩张（更精确，推荐）
-        List<Point> expanded = unclipContour(contour, unclipRatio, minArea);
-
-        if (expanded == null || expanded.size() < 4) {
-            // 降级：使用旋转矩形方式
-            RotatedRect rect = minAreaRectFromContour(contour);
-            expanded = unclipRotatedRect(rect, unclipRatio);
-        }
-
-        if (expanded == null || expanded.size() < 4) {
+        Point[] contourPoints = contour.toArray();
+        if (contourPoints.length < 4) {
             return null;
         }
 
-        // 多边形近似，确保得到4个点
-        double epsilon = 0.01 * arcLength(expanded.toArray(new Point[0]), true);
-        List<Point> box = approxPolyDP(expanded.toArray(new Point[0]), epsilon, true);
+        // 方法1: 直接使用最小外接矩形（不扩张，先测试）
+        try {
+            MatOfPoint2f contour2f = new MatOfPoint2f(contourPoints);
+            RotatedRect rect = Imgproc.minAreaRect(contour2f);
+            contour2f.release();
 
-        // 确保是4个点
-        if (box.size() == 4) {
-            return box;
-        }
+            // 获取矩形顶点
+            Point[] vertices = getRotatedRectPoints(rect);
 
-        // 如果近似后不是4个点，尝试直接取外接矩形
-        if (box.size() > 4) {
-            // 取凸包或使用最小外接矩形
-            RotatedRect rect = minAreaRect(expanded.toArray(new Point[0]));
-            return Arrays.asList(getRotatedRectPoints(rect));
+            // 如果矩形太小，跳过
+            if (rect.size.width < 5 || rect.size.height < 5) {
+                return null;
+            }
+
+            // 尝试扩张
+            double perimeter = arcLength(contour, true);
+            if (perimeter > 1e-6) {
+                double distance = area * unclipRatio / perimeter;
+                if (distance > 0 && distance < 100) {  // 限制最大扩张距离
+                    List<Point> expanded = unclipPolygon(vertices, distance);
+                    if (expanded != null && expanded.size() >= 4) {
+                        vertices = expanded.toArray(new Point[0]);
+                    }
+                }
+            }
+
+            // 多边形近似
+            double epsilon = 0.01 * arcLength(vertices, true);
+            List<Point> box = approxPolyDP(vertices, epsilon, true);
+
+            if (box.size() == 4) {
+                return box;
+            }
+
+            // 如果近似后不是4点，直接使用矩形顶点
+            if (vertices.length == 4) {
+                return Arrays.asList(vertices);
+            }
+
+        } catch (Exception e) {
+            System.err.println("extractTextbox error: " + e.getMessage());
         }
 
         return null;
