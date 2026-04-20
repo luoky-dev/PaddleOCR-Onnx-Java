@@ -277,6 +277,7 @@ public class MatPipeline {
      * 类型转换
      */
     public MatPipeline convertTo(int rtype, double alpha, double beta) {
+        System.out.println("convertTo 被调用");
         return apply(mat -> {
             Mat result = new Mat();
             mat.convertTo(result, rtype, alpha, beta);

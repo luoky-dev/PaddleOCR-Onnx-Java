@@ -6,11 +6,9 @@ import com.ocr.paddleocr.domain.ModelProcessContext;
 import com.ocr.paddleocr.domain.TextBox;
 import com.ocr.paddleocr.utils.MatPipeline;
 import com.ocr.paddleocr.utils.OnnxUtil;
-import com.ocr.paddleocr.utils.OpenCVUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
-import org.opencv.core.Point;
 
 import java.util.*;
 
@@ -67,68 +65,30 @@ public class ClsProcess implements AutoCloseable {
         context.setSuccess(false);
         long startTime = System.currentTimeMillis();
         try {
-            Mat prepMat = context.getDetPrepMat();
             List<TextBox> boxes = context.getBoxes();
-
             if (boxes == null || boxes.isEmpty()) {
                 context.setSuccess(true);
                 context.setClsProcessTime(System.currentTimeMillis() - startTime);
                 return;
             }
 
-            // 1. 收集所有需要分类的文本框图像
-            List<Mat> cropImages = new ArrayList<>();
-            List<TextBox> validBoxes = new ArrayList<>();
-
-            for (TextBox box : boxes) {
-                Mat cropped;
-                try {
-                    cropped = cropTextBox(prepMat, box.getBox());
-                    if (cropped != null && !cropped.empty()) {
-                        cropImages.add(cropped);
-                        validBoxes.add(box);
-                    } else {
-                        // 设置默认值
-                        box.setAngle(0);
-                        box.setClsConfidence(0.0f);
-                    }
-                } catch (Exception e) {
-                    log.debug("裁剪文本框失败: {}", e.getMessage());
-                    box.setAngle(0);
-                    box.setClsConfidence(0.0f);
-                }
-            }
-
-            if (cropImages.isEmpty()) {
-                context.setSuccess(true);
-                context.setClsProcessTime(System.currentTimeMillis() - startTime);
-                return;
-            }
-
             // 2. 批量分类
-            List<ClassificationResult> batchResults = classifyBatch(cropImages);
+            classifyBatch(context);
 
             // 3. 处理分类结果并执行旋转
             int rotCount = 0;
-            for (int i = 0; i < batchResults.size() && i < validBoxes.size(); i++) {
-                TextBox box = validBoxes.get(i);
-                ClassificationResult result = batchResults.get(i);
+            for (int i = 0; i < context.getBoxes().size(); i++) {
+                TextBox box = boxes.get(i);
+                TextBox result = context.getBoxes().get(i);
 
-                box.setAngle(result.angle);
-                box.setClsConfidence(result.confidence);
+                box.setAngle(result.getAngle());
+                box.setClsConfidence(result.getClsConfidence());
 
                 // 修复3: 判断是否需要旋转并执行（使用配置的阈值）
                 if (needRotate(box)) {
-                    Mat originalCrop = cropImages.get(i);
+                    Mat originalCrop = context.getBoxes().get(i).getRawMat();
                     rotateTextBox(box, originalCrop);
                     rotCount++;
-                }
-            }
-
-            // 4. 释放临时资源
-            for (Mat crop : cropImages) {
-                if (crop != null && !crop.empty()) {
-                    crop.release();
                 }
             }
 
@@ -148,16 +108,14 @@ public class ClsProcess implements AutoCloseable {
     /**
      * 批量分类
      */
-    private List<ClassificationResult> classifyBatch(List<Mat> images) throws OrtException {
-        if (images == null || images.isEmpty()) {
-            return new ArrayList<>();
-        }
+    private void classifyBatch(ModelProcessContext context) throws OrtException {
+        List<Mat> images = new ArrayList<>();
 
-        // 1. 批量预处理
-        List<Mat> processedImages = batchPreprocess(images);
+        // 1. 预处理
+        context.getBoxes().forEach(box -> images.add(preprocess(box.getRawMat())));
 
         // 2. 创建批量输入Tensor
-        OnnxTensor inputTensor = OnnxUtil.createBatchInputTensor(processedImages, env);
+        OnnxTensor inputTensor = OnnxUtil.createBatchInputTensor(images, env);
 
         // 3. 批量推理
         Map<String, OnnxTensor> inputs = Collections.singletonMap("x", inputTensor);
@@ -167,33 +125,21 @@ public class ClsProcess implements AutoCloseable {
         float[][][] batchOutput = parseBatchOutput(output);
 
         // 5. 解析分类结果
-        List<ClassificationResult> results = new ArrayList<>();
-        for (float[][] outputData : batchOutput) {
-            ClassificationResult result = parseClassificationOutput(outputData);
-            results.add(result);
+        for (int i = 0; i < batchOutput.length; i++){
+            TextBox originalBox = context.getBoxes().get(i);
+            TextBox result = parseClassificationOutput(batchOutput[i]);
+            originalBox.setAngle(result.getAngle());
+            originalBox.setClsConfidence(result.getClsConfidence());
         }
 
         // 6. 释放资源
         inputTensor.close();
         output.close();
-        for (Mat processed : processedImages) {
+        for (Mat processed : images) {
             if (processed != null && !processed.empty()) {
                 processed.release();
             }
         }
-
-        return results;
-    }
-
-    /**
-     * 批量预处理
-     */
-    private List<Mat> batchPreprocess(List<Mat> images) {
-        List<Mat> processed = new ArrayList<>();
-        for (Mat image : images) {
-            processed.add(preprocess(image));
-        }
-        return processed;
     }
 
     /**
@@ -246,9 +192,9 @@ public class ClsProcess implements AutoCloseable {
     /**
      * 解析分类输出，获取角度和置信度
      */
-    private ClassificationResult parseClassificationOutput(float[][] outputData) {
+    private TextBox parseClassificationOutput(float[][] outputData) {
         if (outputData == null || outputData.length == 0) {
-            return new ClassificationResult(0, 0.0f);
+            return TextBox.builder().angle(0).clsConfidence(0.0f).build();
         }
 
         float[] probabilities = outputData[0];
@@ -259,7 +205,7 @@ public class ClsProcess implements AutoCloseable {
         log.debug("方向分类完成，角度: {}, 置信度: {}%",
                 angle, String.format("%.2f", confidence * 100));
 
-        return new ClassificationResult(angle, confidence);
+        return TextBox.builder().angle(angle).clsConfidence(confidence).build();
     }
 
     /**
@@ -313,26 +259,26 @@ public class ClsProcess implements AutoCloseable {
     /**
      * 旋转文本框图像并更新坐标
      */
-    private void rotateTextBox(TextBox detBox, Mat originalImage) {
-        detBox.setRawMat(originalImage);
+    private void rotateTextBox(TextBox prepBox, Mat originalImage) {
+        prepBox.setRawMat(originalImage);
         try {
-            int angle = detBox.getAngle();
+            int angle = prepBox.getAngle();
             Mat rotatedMat = null;
 
             if (angle == 180) {
                 rotatedMat = rotateImage180(originalImage);
-                detBox.setRotAngle(180);
+                prepBox.setRotAngle(180);
             } else if (angle == 90) {
                 rotatedMat = rotateImage90(originalImage, true);
-                detBox.setRotAngle(90);
+                prepBox.setRotAngle(90);
             } else if (angle == 270) {
                 rotatedMat = rotateImage90(originalImage, false);
-                detBox.setRotAngle(270);
+                prepBox.setRotAngle(270);
             }
 
             if (rotatedMat != null) {
-                detBox.setRotMat(rotatedMat);
-                detBox.setRotate(true);
+                prepBox.setRotMat(rotatedMat);
+                prepBox.setRotate(true);
 
                 log.debug("文本框已旋转 {} 度，旋转后图像尺寸: {}x{}",
                         angle, rotatedMat.width(), rotatedMat.height());
@@ -340,7 +286,7 @@ public class ClsProcess implements AutoCloseable {
 
         } catch (Exception e) {
             log.error("旋转文本框失败", e);
-            detBox.setRotate(false);
+            prepBox.setRotate(false);
         }
     }
 
@@ -367,20 +313,6 @@ public class ClsProcess implements AutoCloseable {
     }
 
     /**
-     * 从图像中裁剪文本框区域
-     */
-    public static Mat cropTextBox(Mat image, List<Point> box) {
-        if (image == null || image.empty() || box == null || box.size() < 4) {
-            return null;
-        }
-        try {
-            return OpenCVUtil.perspectiveTransformCrop(image, box);
-        } catch (Exception e) {
-            return OpenCVUtil.rectangleCrop(image, box);
-        }
-    }
-
-    /**
      * 关闭模型会话，释放资源
      */
     @Override
@@ -388,19 +320,6 @@ public class ClsProcess implements AutoCloseable {
         if (session != null) {
             session.close();
             log.info("方向分类模型会话已关闭");
-        }
-    }
-
-    /**
-     * 分类结果内部类
-     */
-    private static class ClassificationResult {
-        final int angle;
-        final float confidence;
-
-        ClassificationResult(int angle, float confidence) {
-            this.angle = angle;
-            this.confidence = confidence;
         }
     }
 }

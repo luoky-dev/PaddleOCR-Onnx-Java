@@ -9,6 +9,7 @@ import com.ocr.paddleocr.utils.MatPipeline;
 import com.ocr.paddleocr.utils.ModelUtil;
 import com.ocr.paddleocr.utils.OnnxUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 
 import java.io.BufferedReader;
@@ -165,9 +166,6 @@ public class RecProcess implements AutoCloseable {
                     // 如果没有旋转图像，使用原始图像
                     image = box.getRawMat();
                 }
-                if (image == null || image.empty()) {
-                    continue;
-                }
                 recognizeImages.add(image);
             }
             // 2. 批量识别
@@ -226,11 +224,17 @@ public class RecProcess implements AutoCloseable {
      * 图像预处理（保持BGR通道，与官方一致）
      */
     private Mat preprocess(Mat image) {
-        return MatPipeline.fromMat(image)
+        Mat result = MatPipeline.fromMat(image)
                 .toRGB()
                 .resize(MODEL_INPUT_WIDTH, MODEL_INPUT_HEIGHT)
-                .normalize()
+                .convertTo(CvType.CV_32FC3, 1.0 / 255.0, 0)  // 直接使用带参数的方法
                 .get();
+
+        // 调试：打印类型
+        log.info("预处理后图像类型: {}", result.type());
+        log.info("CV_32FC3 = {}, 实际类型 = {}", CvType.CV_32FC3, result.type());
+
+        return result;
     }
 
     /**

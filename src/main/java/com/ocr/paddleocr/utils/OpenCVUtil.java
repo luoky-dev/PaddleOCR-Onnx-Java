@@ -91,9 +91,8 @@ public class OpenCVUtil {
         MatOfPoint2f dstMat = new MatOfPoint2f(dstPoints);
         Mat transform = Imgproc.getPerspectiveTransform(srcMat, dstMat);
         // 执行透视变换
-        Mat result = MatPipeline.fromMat(image)
-                .warpPerspective(transform, new Size(width, height))
-                .get();
+        Mat result = new Mat();
+        Imgproc.warpPerspective(image, result, transform, new Size(width, height));
         // 释放资源
         srcMat.release();
         dstMat.release();

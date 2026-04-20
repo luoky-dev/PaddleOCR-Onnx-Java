@@ -8,9 +8,11 @@ import com.ocr.paddleocr.process.DetProcess;
 import com.ocr.paddleocr.domain.ModelProcessContext;
 import com.ocr.paddleocr.process.RecProcess;
 import com.ocr.paddleocr.utils.MatPipeline;
+import com.ocr.paddleocr.utils.OpenCVUtil;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.opencv.core.Mat;
+import org.opencv.core.Point;
 
 import java.io.Closeable;
 import java.util.ArrayList;
@@ -145,6 +147,7 @@ public class PaddleOCR implements Closeable {
                 return resultBuilder.build();
             }
             log.info("检测到 {} 个文本区域", context.getBoxes().size());
+            cropTextBox(context);
 
             // 3. 方向分类
             if (clsProcess != null && config.isUseAngleCls()) {
@@ -189,6 +192,74 @@ public class PaddleOCR implements Closeable {
     }
 
     /**
+     * 从图像中裁剪文本框区域
+     */
+    public static void cropTextBox(ModelProcessContext context) {
+        Mat rawMat = context.getRawMat();
+        List<TextBox> croppedBoxes = context.getBoxes();
+
+        if (rawMat == null || rawMat.empty()) {
+            log.warn("裁剪失败: rawMat 为空");
+            return;
+        }
+
+        log.info("原始图像尺寸: {}x{}", rawMat.width(), rawMat.height());
+
+        for (int i = 0; i < croppedBoxes.size(); i++) {
+            TextBox box = croppedBoxes.get(i);
+            List<Point> points = box.getBoxPoint();
+
+            // 验证坐标是否在图像范围内
+            boolean valid = true;
+            for (Point p : points) {
+                if (p.x < 0 || p.x > rawMat.width() || p.y < 0 || p.y > rawMat.height()) {
+                    log.warn("文本框[{}] 坐标超出范围: ({}, {}), 图像尺寸 {}x{}",
+                            i, p.x, p.y, rawMat.width(), rawMat.height());
+                    valid = false;
+                    break;
+                }
+            }
+
+            if (!valid) {
+                continue;
+            }
+
+            // 计算面积
+            double area = calculateArea(points);
+            if (area < 10) {
+                log.warn("文本框[{}] 面积过小: {}", i, area);
+                continue;
+            }
+
+            // 尝试裁剪
+            try {
+                Mat cropped = OpenCVUtil.perspectiveTransformCrop(rawMat, points);
+                if (!cropped.empty()) {
+                    log.info("文本框[{}] 裁剪成功: {}x{}", i, cropped.width(), cropped.height());
+                    box.setRawMat(cropped);
+                } else {
+                    log.info("文本框[{}] 裁剪失败", i);
+                    box.setRawMat(new Mat());
+                }
+            } catch (Exception e) {
+                log.info("文本框[{}] 裁剪异常: {}", i, e.getMessage());
+                box.setRawMat(new Mat());
+            }
+        }
+    }
+
+    private static double calculateArea(List<Point> points) {
+        if (points.size() < 4) return 0;
+        double area = 0;
+        for (int i = 0; i < points.size(); i++) {
+            Point p1 = points.get(i);
+            Point p2 = points.get((i + 1) % points.size());
+            area += p1.x * p2.y - p2.x * p1.y;
+        }
+        return Math.abs(area) / 2.0;
+    }
+
+    /**
      * 转换为最终预测结果
      */
     private List<OCRPrediction> convertToPredictions(List<TextBox> boxes) {
@@ -201,7 +272,7 @@ public class PaddleOCR implements Closeable {
                 .filter(r -> r.getText() != null && !r.getText().isEmpty())
                 .filter(r -> r.getRecConfidence() >= config.getMinConfidence())
                 .map(r -> OCRPrediction.builder()
-                        .box(r.getBox())
+                        .box(r.getBoxPoint())
                         .text(r.getText())
                         .confidence(r.getRecConfidence())
                         .build())

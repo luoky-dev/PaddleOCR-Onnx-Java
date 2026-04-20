@@ -82,7 +82,7 @@ public class DetProcess implements AutoCloseable {
             context.setBoxes(boxes.stream()
                     .map(box -> {
                         TextBox textBox = new TextBox();
-                        textBox.setBox(box);
+                        textBox.setBoxPoint(box);
                         return textBox;
                     }).collect(Collectors.toList()));
 
@@ -401,6 +401,10 @@ public class DetProcess implements AutoCloseable {
 
     /**
      * 还原文本框到原始图像尺寸
+     * 完全对齐 PaddleOCR 官方实现
+     *
+     * 官方做法：直接除以缩放比例，不做 clamp
+     * 超出边界的框会在后续的 filterInvalidBoxes 中被过滤
      */
     private List<List<Point>> restoreBoxesToOriginal(List<List<Point>> boxes,
                                                      ModelProcessContext context) {
@@ -408,20 +412,62 @@ public class DetProcess implements AutoCloseable {
         int originalWidth = context.getOriginalWidth();
         int originalHeight = context.getOriginalHeight();
 
-        return boxes.stream()
-                .map(box -> box.stream()
-                        .map(p -> new Point(
-                                clamp(p.x / scale, originalWidth - 1),
-                                clamp(p.y / scale, originalHeight - 1)
-                        ))
-                        .collect(Collectors.toList())
-                )
-                .collect(Collectors.toList());
+        log.info("========== 坐标还原参数 ==========");
+        log.info("缩放比例 scale: {}", scale);
+        log.info("原始图像尺寸: {}x{}", originalWidth, originalHeight);
+        log.info("还原前文本框数量: {}", boxes.size());
+
+        List<List<Point>> restoredBoxes = new ArrayList<>();
+        int outOfBoundsCount = 0;
+
+        for (int i = 0; i < boxes.size(); i++) {
+            List<Point> box = boxes.get(i);
+
+            log.info("还原前[{}]: 坐标点:", i);
+            for (int j = 0; j < box.size(); j++) {
+                Point p = box.get(j);
+                log.info("  点{}: ({}, {})", j, p.x, p.y);
+            }
+
+            // 还原坐标：直接除以缩放比例，不做 clamp（官方做法）
+            List<Point> restored = new ArrayList<>();
+            boolean outOfBounds = false;
+
+            for (Point p : box) {
+                double restoredX = p.x / scale;
+                double restoredY = p.y / scale;
+                restored.add(new Point(restoredX, restoredY));
+
+                // 检查是否超出边界（仅用于日志，不进行 clamp）
+                if (restoredX < 0 || restoredX > originalWidth ||
+                        restoredY < 0 || restoredY > originalHeight) {
+                    outOfBounds = true;
+                }
+            }
+
+            restoredBoxes.add(restored);
+
+            log.info("还原后[{}]: 坐标点:", i);
+            for (int j = 0; j < restored.size(); j++) {
+                Point p = restored.get(j);
+                log.info("  点{}: ({}, {})", j, p.x, p.y);
+            }
+
+            // 计算边界框
+            double minX = restored.stream().mapToDouble(p -> p.x).min().orElse(0);
+            double minY = restored.stream().mapToDouble(p -> p.y).min().orElse(0);
+            double maxX = restored.stream().mapToDouble(p -> p.x).max().orElse(0);
+            double maxY = restored.stream().mapToDouble(p -> p.y).max().orElse(0);
+            log.info("还原后[{}] 边界框: x=[{}, {}], y=[{}, {}], 宽={}, 高={}",
+                    i, minX, maxX, minY, maxY, maxX - minX, maxY - minY);
+        }
+
+        log.info("坐标还原完成，还原后文本框数量: {}", restoredBoxes.size());
+
+        return restoredBoxes;
     }
 
-    private double clamp(double value, double max) {
-        return Math.min(Math.max(value, 0), max);
-    }
+
 
     /**
      * 过滤无效检测框

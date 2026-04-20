@@ -28,7 +28,7 @@ public class TextBox {
     /**
      * 检测框四个顶点
      */
-    private List<Point> box;
+    private List<Point> boxPoint;
 
     /**
      * 原检测框方向角度

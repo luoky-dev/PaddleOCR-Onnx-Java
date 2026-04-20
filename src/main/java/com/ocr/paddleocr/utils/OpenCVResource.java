@@ -434,7 +434,7 @@ public class OpenCVResource {
             }
 
             // 多边形近似
-            double epsilon = 0.01 * arcLength(vertices, true);
+            double epsilon = 0.002 * arcLength(vertices, true);
             List<Point> box = approxPolyDP(vertices, epsilon, true);
 
             if (box.size() == 4) {
