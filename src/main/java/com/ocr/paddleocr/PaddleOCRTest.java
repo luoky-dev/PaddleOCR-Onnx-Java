@@ -11,7 +11,7 @@ public class PaddleOCRTest {
     public static void main(String[] args) {
         // 测试图片路径 - 请修改为实际的图片路径
 //        String testImagePath = "C:\\Users\\26221\\Desktop\\paddle-ocr-onnx\\INE_FRONT4.jpeg";
-        String testImagePath = "C:\\Users\\luoky\\Desktop\\PaddleOCR-Onnx-Java\\chi_test.jpg";
+        String testImagePath = "src/main/java/resources/test/chi_test.jpg";
 
         // 运行测试
         runBasicTest(testImagePath);

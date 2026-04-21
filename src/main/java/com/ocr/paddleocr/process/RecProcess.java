@@ -224,18 +224,11 @@ public class RecProcess implements AutoCloseable {
      * 图像预处理（保持BGR通道，与官方一致）
      */
     private Mat preprocess(Mat image) {
-        Mat result = MatPipeline.fromMat(image)
+        return MatPipeline.fromMatCopy(image)
                 .toRGB()
                 .resize(MODEL_INPUT_WIDTH, MODEL_INPUT_HEIGHT)
-//                .normalize()
-                .convertTo(CvType.CV_32FC3, 1.0 / 255.0, 0)  // 直接使用带参数的方法
+                .normalize()
                 .get();
-
-        // 调试：打印类型
-        log.info("识别预处理后图像类型: {}", result.type());
-        log.info("CV_32FC3 = {}, 实际类型 = {}", CvType.CV_32FC3, result.type());
-
-        return result;
     }
 
     /**

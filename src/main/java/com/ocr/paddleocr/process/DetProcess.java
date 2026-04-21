@@ -9,8 +9,10 @@ import com.ocr.paddleocr.domain.TextBox;
 import com.ocr.paddleocr.utils.*;
 import lombok.extern.slf4j.Slf4j;
 import org.opencv.core.*;
+import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -23,24 +25,35 @@ import java.util.stream.Collectors;
 @Slf4j
 public class DetProcess implements AutoCloseable {
 
-    // ==================== 后处理默认参数 ====================
-    private static final float DEFAULT_NMS_IOU_THRESHOLD = 0.5f;
-    private static final int DEFAULT_MIN_BOX_AREA = 9;
-
-    // ==================== 框过滤参数 ====================
-    private static final int DEFAULT_MIN_BOX_WIDTH = 5;
-    private static final int DEFAULT_MIN_BOX_HEIGHT = 5;
-    private static final float DEFAULT_MAX_ASPECT_RATIO = 50.0f;
+    // ==================== 后处理默认参数（对齐官方） ====================
+    private static final float DEFAULT_NMS_IOU_THRESHOLD = 0.3f;  // 官方默认 0.3
+    private static final int DEFAULT_MIN_BOX_AREA = 10;           // 官方默认 10
 
     // ==================== 成员变量 ====================
     private OrtSession session;
     private final OrtEnvironment env;
     private final OCRConfig config;
+    private final boolean debugMode;
+
+    // 中间图片保存目录
+    private String intermediateDir;
 
     public DetProcess(OCRConfig config) throws OrtException {
         this.config = config;
         this.env = OrtEnvironment.getEnvironment();
+        this.debugMode = config.isDebugMode();
+        this.intermediateDir =  "src/main/java/resources/test/output";
         loadModel();
+
+        // 创建中间图片保存目录
+        if (config.isVisualize()) {
+            File dir = new File(intermediateDir);
+            if (!dir.exists()) {
+                dir.mkdirs();
+            }
+            log.info("中间图片保存目录: {}", intermediateDir);
+        }
+
         log.info("文本检测处理器初始化完成，模型路径: {}", config.getDetModelPath());
     }
 
@@ -68,17 +81,33 @@ public class DetProcess implements AutoCloseable {
 
             // 4. 解析输出
             float[][][] parseResult = parseOutput(output);
-            log.debug("分割图尺寸: {}x{}", parseResult[0].length, parseResult[0][0].length);
+            log.info("分割图尺寸: {}x{}", parseResult[0].length, parseResult[0][0].length);
 
-            // 5. DB后处理获取文本框（传入概率图用于置信度计算）
+            // 保存概率图热力图
+            if (config.isVisualize()) {
+                saveProbabilityHeatmap(parseResult[0], "prob_map");
+            }
+
+            // 5. DB后处理获取文本框
             List<List<Point>> boxes = dbPostProcess(parseResult[0], context);
             log.info("DB后处理检测到 {} 个文本框", boxes.size());
 
-            // 6. 过滤无效框
+            // 6. 绘制并保存检测框图
+            if (config.isVisualize()) {
+                Mat originalImage = context.getRawMat();
+                Mat visualized = drawDetectionBoxes(originalImage, boxes);
+                saveImage(visualized, "detection_boxes");
+                visualized.release();
+
+                // 保存边缘检测图
+                saveEdgeMap(originalImage, "edges");
+            }
+
+            // 7. 过滤无效框（对齐官方）
             boxes = filterInvalidBoxes(boxes, context.getOriginalWidth(), context.getOriginalHeight());
             log.info("过滤后剩余 {} 个文本框", boxes.size());
 
-            // 7. 设置识别结果
+            // 8. 设置识别结果
             context.setBoxes(boxes.stream()
                     .map(box -> {
                         TextBox textBox = new TextBox();
@@ -86,7 +115,7 @@ public class DetProcess implements AutoCloseable {
                         return textBox;
                     }).collect(Collectors.toList()));
 
-            // 8. 释放资源
+            // 9. 释放资源
             inputTensor.close();
             output.close();
 
@@ -103,78 +132,258 @@ public class DetProcess implements AutoCloseable {
     }
 
     /**
-     * DB 检测模型预处理（完全遵循 PaddleOCR 官方策略）
+     * 保存概率图热力图
+     */
+    private void saveProbabilityHeatmap(float[][] probMap, String filename) {
+        try {
+            int height = probMap.length;
+            int width = probMap[0].length;
+
+            // 创建概率图Mat
+            Mat probMat = new Mat(height, width, CvType.CV_32FC1);
+            for (int i = 0; i < height; i++) {
+                for (int j = 0; j < width; j++) {
+                    probMat.put(i, j, probMap[i][j] * 255);
+                }
+            }
+
+            // 转换为8位图像
+            Mat prob8u = new Mat();
+            probMat.convertTo(prob8u, CvType.CV_8UC1);
+
+            // 应用彩色映射
+            Mat heatmap = new Mat();
+            Imgproc.applyColorMap(prob8u, heatmap, Imgproc.COLORMAP_JET);
+
+            // 保存
+            saveImage(heatmap, filename + "_heatmap");
+
+            // 保存原始概率图（灰度）
+            saveImage(prob8u, filename + "_gray");
+
+            probMat.release();
+            prob8u.release();
+            heatmap.release();
+
+            log.debug("保存概率图: {}", filename);
+        } catch (Exception e) {
+            log.warn("保存概率图失败: {}", e.getMessage());
+        }
+    }
+
+
+    /**
+     * 保存边缘检测图
+     */
+    private void saveEdgeMap(Mat image, String filename) {
+        try {
+            Mat gray = new Mat();
+            Mat edges = new Mat();
+            Imgproc.cvtColor(image, gray, Imgproc.COLOR_BGR2GRAY);
+
+            // Canny边缘检测
+            Imgproc.Canny(gray, edges, 50, 150);
+            saveImage(edges, filename + "_canny");
+
+            gray.release();
+            edges.release();
+            log.debug("保存边缘检测图: {}", filename);
+        } catch (Exception e) {
+            log.warn("保存边缘检测图失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 绘制检测框
+     */
+    private Mat drawDetectionBoxes(Mat image, List<List<Point>> boxes) {
+        Mat result = image.clone();
+        Scalar color = new Scalar(0, 255, 0);  // 绿色
+        int thickness = 2;
+
+        for (int i = 0; i < boxes.size(); i++) {
+            List<Point> box = boxes.get(i);
+            if (box == null || box.size() < 4) {
+                continue;
+            }
+
+            MatOfPoint matOfPoint = new MatOfPoint();
+            matOfPoint.fromList(box);
+            Imgproc.polylines(result, Collections.singletonList(matOfPoint), true, color, thickness);
+            matOfPoint.release();
+
+            // 绘制序号
+            Point center = getBoxCenter(box);
+            Imgproc.putText(result, String.valueOf(i + 1),
+                    new org.opencv.core.Point(center.x, center.y - 5),
+                    Imgproc.FONT_HERSHEY_SIMPLEX, 0.5, color, 1);
+        }
+
+        return result;
+    }
+
+    /**
+     * 获取框的中心点
+     */
+    private Point getBoxCenter(List<Point> box) {
+        double sumX = 0, sumY = 0;
+        for (Point p : box) {
+            sumX += p.x;
+            sumY += p.y;
+        }
+        return new Point(sumX / box.size(), sumY / box.size());
+    }
+
+    /**
+     * 保存图像到文件
+     */
+    private void saveImage(Mat image, String filename) {
+        try {
+            String path = intermediateDir + "/" + filename + ".jpg";
+            Imgcodecs.imwrite(path, image);
+            log.debug("保存图片: {}", path);
+        } catch (Exception e) {
+            log.warn("保存图片失败: {} - {}", filename, e.getMessage());
+        }
+    }
+
+    /**
+     * 保存二值化图像（用于调试）
+     */
+    private void saveBinaryImage(Mat binary, String filename) {
+        if (!config.isVisualize()) return;
+
+        try {
+            // 确保是8位单通道
+            Mat binary8u = new Mat();
+            if (binary.type() == CvType.CV_32FC1) {
+                binary.convertTo(binary8u, CvType.CV_8UC1, 255);
+            } else {
+                binary8u = binary.clone();
+            }
+            saveImage(binary8u, filename);
+            binary8u.release();
+        } catch (Exception e) {
+            log.warn("保存二值化图失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 保存膨胀/闭运算后的图像
+     */
+    private void saveMorphImage(Mat morph, String filename) {
+        if (!config.isVisualize()) return;
+        saveImage(morph, filename);
+    }
+
+    /**
+     * 保存轮廓图像
+     */
+    private void saveContoursImage(Mat binary, List<MatOfPoint> contours, String filename) {
+        if (!config.isVisualize()) return;
+
+        try {
+            Mat contoursImg = new Mat();
+            Imgproc.cvtColor(binary, contoursImg, Imgproc.COLOR_GRAY2BGR);
+
+            // 绘制轮廓
+            for (int i = 0; i < contours.size(); i++) {
+                Scalar color = new Scalar(
+                        (i * 50) % 255,
+                        (i * 100) % 255,
+                        (i * 150) % 255
+                );
+                Imgproc.drawContours(contoursImg, contours, i, color, 1);
+            }
+
+            saveImage(contoursImg, filename);
+            contoursImg.release();
+        } catch (Exception e) {
+            log.warn("保存轮廓图失败: {}", e.getMessage());
+        }
+    }
+
+    // ==================== 原有的预处理和后处理方法 ====================
+
+    /**
+     * DB 检测模型预处理
      */
     private void detPreprocess(ModelProcessContext context) {
-        // 模型要求的固定输入尺寸（从配置中读取）
-        int modelInputHeight = config.getDetImageHeight();  // 应该是 960
-        int modelInputWidth = config.getDetImageWidth();    // 应该是 960
+        int maxSideLen = config.getDetMaxSideLen();
+        int align = 32;
 
         int originalWidth = context.getOriginalWidth();
         int originalHeight = context.getOriginalHeight();
 
-        // 计算缩放比例（保持长宽比，缩放到模型输入尺寸内）
-        float scale = Math.min(
-                (float) modelInputWidth / originalWidth,
-                (float) modelInputHeight / originalHeight
-        );
+        float scale;
+        int maxOriginalSide = Math.max(originalWidth, originalHeight);
+        if (maxOriginalSide > maxSideLen) {
+            scale = (float) maxSideLen / maxOriginalSide;
+        } else {
+            scale = 1.0f;
+        }
 
-        // 计算缩放后的尺寸
         int newWidth = (int) (originalWidth * scale);
         int newHeight = (int) (originalHeight * scale);
 
-        // 确保尺寸不小于1
-        newWidth = Math.max(newWidth, 1);
-        newHeight = Math.max(newHeight, 1);
+        newWidth = newWidth - (newWidth % align);
+        newHeight = newHeight - (newHeight % align);
 
-        // 创建缩放后的图像
+        newWidth = Math.max(newWidth, align);
+        newHeight = Math.max(newHeight, align);
+
         Mat resized = new Mat();
         Imgproc.resize(context.getRawMat(), resized, new Size(newWidth, newHeight));
 
-        // 创建目标尺寸的空白图像（黑色填充）
-        Mat padded = new Mat(modelInputHeight, modelInputWidth, resized.type(), new Scalar(0, 0, 0));
+        // 保存缩放后的图像
+        if (config.isVisualize()) {
+            saveImage(resized, "preprocessed_resized");
+        }
 
-        // 将缩放后的图像放到中心位置
-        int xOffset = (modelInputWidth - newWidth) / 2;
-        int yOffset = (modelInputHeight - newHeight) / 2;
-        resized.copyTo(padded.submat(yOffset, yOffset + newHeight, xOffset, xOffset + newWidth));
-
-        // 归一化到 [0, 1] 范围（检测模型需要）
         Mat floatMat = new Mat();
-        padded.convertTo(floatMat, CvType.CV_32FC3, 1.0 / 255.0);
-
-        // 释放临时资源
+        resized.convertTo(floatMat, CvType.CV_32FC3, 1.0 / 255.0);
         resized.release();
-        padded.release();
 
-        // 保存预处理结果
-        context.setDetPrepWidth(modelInputWidth);
-        context.setDetPrepHeight(modelInputHeight);
-        context.setDetPrepMat(floatMat);
+        Mat normalized = normalizeImage(floatMat);
+        floatMat.release();
 
-        // 保存缩放比例和偏移量（用于后续坐标转换）
+        context.setDetPrepWidth(newWidth);
+        context.setDetPrepHeight(newHeight);
+        context.setDetPrepMat(normalized);
         context.setScale(scale);
-//        context.setDetPadTop(yOffset);
-//        context.setDetPadLeft(xOffset);
 
-        log.debug("预处理完成: 原始 {}x{} -> 缩放 {}x{} -> 填充 {}x{}, 缩放比例={}",
-                originalWidth, originalHeight, newWidth, newHeight,
-                modelInputWidth, modelInputHeight, String.format("%.3f", scale));
+        log.debug("预处理完成: 原始 {}x{} -> 缩放 {}x{} (scale={}, 对齐32)",
+                originalWidth, originalHeight, newWidth, newHeight, scale);
     }
 
     /**
-     * 预处理：保持 BGR 通道顺序
+     * 图像标准化（减均值，除标准差）
      */
-    private Mat preprocess(Mat image, int targetWidth, int targetHeight) {
-        return MatPipeline.fromMat(image)
-                .resize(targetWidth, targetHeight)
-                .normalize()
-                .get();
+    private Mat normalizeImage(Mat image) {
+        float[] mean = {0.485f, 0.456f, 0.406f};
+        float[] std = {0.229f, 0.224f, 0.225f};
+
+        Mat result = new Mat();
+        image.convertTo(result, CvType.CV_32FC3);
+
+        List<Mat> channels = new ArrayList<>();
+        Core.split(result, channels);
+
+        for (int i = 0; i < 3; i++) {
+            Mat channel = channels.get(i);
+            Core.subtract(channel, new Scalar(mean[i]), channel);
+            Core.divide(channel, new Scalar(std[i]), channel);
+        }
+
+        Core.merge(channels, result);
+
+        for (Mat ch : channels) {
+            ch.release();
+        }
+
+        return result;
     }
 
-    /**
-     * 解析模型输出
-     */
     private float[][][] parseOutput(Result output) throws OrtException {
         OnnxValue outputValue = output.get(0);
         try {
@@ -190,287 +399,154 @@ public class DetProcess implements AutoCloseable {
     }
 
     /**
-     * DB后处理算法
+     * DB后处理 - 完全对齐官方
+     */
+    /**
+     * DB后处理 - 完全对齐官方
      */
     private List<List<Point>> dbPostProcess(float[][] probMap, ModelProcessContext context) {
-        float boxThresh = config.getDetDbBoxThresh();
-        float unclipRatio = config.getDetDbUnclipRatio();
-        int minBoxArea = config.getMinBoxArea() > 0 ? config.getMinBoxArea() : 10;
-
-        int height = probMap.length;
-        int width = probMap[0].length;
-
-        // 添加：打印概率图统计信息
-        float minProb = Float.MAX_VALUE;
-        float maxProb = Float.MIN_VALUE;
-        float sumProb = 0;
-        for (float[] floats : probMap) {
-            for (int j = 0; j < width; j++) {
-                float val = floats[j];
-                minProb = Math.min(minProb, val);
-                maxProb = Math.max(maxProb, val);
-                sumProb += val;
+        // 1. 二值化
+        boolean[][] bitmap = new boolean[probMap.length][probMap[0].length];
+        for (int i = 0; i < probMap.length; i++) {
+            for (int j = 0; j < probMap[0].length; j++) {
+                bitmap[i][j] = probMap[i][j] > DBPostProcess.THRESH;
             }
         }
-        float meanProb = sumProb / (height * width);
-        log.info("概率图统计: 尺寸={}x{}, 范围=[{}, {}], 均值={}",
-                height, width, minProb, maxProb, meanProb);
-        log.info("当前阈值: boxThresh={}, unclipRatio={}, minBoxArea={}",
-                boxThresh, unclipRatio, minBoxArea);
 
-        return MatPipeline.fromMap(probMap)
-                .peek(mat -> {
-                    // 打印二值化前的统计
-                    log.debug("概率图类型: {}", mat.type());
-                })
-                .binary(boxThresh)
-                .peek(mat -> {
-                    // 打印二值化后的白点数量
-                    int whiteCount = Core.countNonZero(mat);
-                    log.info("二值化后白点数量: {} / {} ({}%)",
-                            whiteCount, height * width, 100.0 * whiteCount / (height * width));
-                })
-                .toCV8UC1()
-                .peek(mat -> {
-                    int whiteCount = Core.countNonZero(mat);
-                    log.info("转换CV8UC1后白点数量: {}", whiteCount);
-                })
-                .dilate(new Size(config.getDetDilateKernelSize(), config.getDetDilateKernelSize()))
-                .peek(mat -> {
-                    int whiteCount = Core.countNonZero(mat);
-                    log.info("膨胀后白点数量: {}", whiteCount);
-                })
-                .close(new Size(config.getDetCloseKernelSize(), config.getDetCloseKernelSize()))
-                .peek(mat -> {
-                    int whiteCount = Core.countNonZero(mat);
-                    log.info("闭运算后白点数量: {}", whiteCount);
-                })
-                .map(mat -> {
-                    List<MatOfPoint> contours = findAndSortContours(mat);
-                    log.info("找到轮廓数量: {}", contours.size());
+        // 2. 膨胀操作
+        bitmap = DBPostProcess.expandBitmap(bitmap, probMap, DBPostProcess.BOX_THRESH);
 
-                    if (contours.isEmpty()) {
-                        return new ArrayList<>();
-                    }
+        // 3. 查找轮廓
+        List<MatOfPoint> contours = DBPostProcess.findContours(bitmap);
 
-                    List<List<Point>> allBoxes = extractTextBoxes(contours);
-                    log.info("提取文本框数量: {}", allBoxes.size());
+        // 保存轮廓图像
+        if (config.isVisualize() && !contours.isEmpty()) {
+            Mat binaryMat = new Mat(probMap.length, probMap[0].length, CvType.CV_8UC1);
+            for (int i = 0; i < probMap.length; i++) {
+                for (int j = 0; j < probMap[0].length; j++) {
+                    binaryMat.put(i, j, bitmap[i][j] ? 255 : 0);
+                }
+            }
+            saveContoursImage(binaryMat, contours, "contours");
+            binaryMat.release();
+        }
 
-                    List<List<Point>> nmsBoxes = nms(allBoxes);
-                    log.info("NMS后文本框数量: {}", nmsBoxes.size());
-
-                    return restoreBoxesToOriginal(nmsBoxes, context);
-                });
-    }
-    /**
-     * 查找并排序轮廓（官方按面积降序）
-     */
-    private List<MatOfPoint> findAndSortContours(Mat binary) {
-        List<MatOfPoint> contours = new ArrayList<>();
-        Mat hierarchy = new Mat();
-        Imgproc.findContours(binary, contours, hierarchy,
-                Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE);
-        hierarchy.release();
-
-        // 按轮廓面积降序排序（官方做法）
-        contours.sort((a, b) -> Double.compare(
-                Imgproc.contourArea(b), Imgproc.contourArea(a)));
-
-        return contours;
-    }
-
-    private List<List<Point>> extractTextBoxes(List<MatOfPoint> contours) {
-        List<List<Point>> allBoxes = new ArrayList<>();
-        float unclipRatio = config.getDetDbUnclipRatio();
-        int minBoxArea = config.getMinBoxArea() > 0 ? config.getMinBoxArea() : 3;  // 降低到 3
-
-        int skippedByArea = 0;
-        int skippedByPoints = 0;
-        int skippedByBox = 0;
+        // 4. 提取文本框
+        List<List<Point>> boxes = new ArrayList<>();
+        List<Float> scores = new ArrayList<>();
 
         for (MatOfPoint contour : contours) {
             double area = Imgproc.contourArea(contour);
-            if (area < minBoxArea) {
-                skippedByArea++;
-                continue;
-            }
+            if (area < DBPostProcess.MIN_AREA) continue;
 
-            // 检查轮廓点数
-            Point[] points = contour.toArray();
-            if (points.length < 4) {  // 降低到 4
-                skippedByPoints++;
-                continue;
-            }
+            double score = DBPostProcess.getScore(contour, probMap);
+            if (score < DBPostProcess.BOX_THRESH) continue;
 
-            log.debug("轮廓面积: {}, 点数: {}", area, points.length);
+            MatOfPoint2f contour2f = new MatOfPoint2f(contour.toArray());
+            RotatedRect rect = Imgproc.minAreaRect(contour2f);
+            contour2f.release();
 
-            try {
-                List<Point> box = OpenCVResource.extractTextbox(
-                        contour,
-                        unclipRatio,
-                        minBoxArea
-                );
+            double perimeter = Imgproc.arcLength(new MatOfPoint2f(contour.toArray()), true);
+            double distance = area * DBPostProcess.UNCLIP_RATIO / perimeter;
 
-                if (box != null && box.size() == 4) {
-                    List<Point> orderedBox = OpenCVUtil.orderPoints(box);
-                    allBoxes.add(orderedBox);
-                    log.debug("成功提取文本框: 面积={}", area);
-                } else {
-                    skippedByBox++;
-                    log.debug("extractTextbox 返回 null 或点数不对: {}", box != null ? box.size() : "null");
-                }
-            } catch (Exception e) {
-                log.debug("extractTextbox 异常: {}", e.getMessage());
-                skippedByBox++;
+            List<Point> box = DBPostProcess.unclip(rect, distance);
+            double epsilon = 0.002 * Imgproc.arcLength(new MatOfPoint2f(box.toArray(new Point[0])), true);
+            box = DBPostProcess.approxPolyDP(box, epsilon, true);
+
+            if (box.size() == 4) {
+                boxes.add(box);
+                scores.add((float) score);
             }
         }
 
-        log.info("文本框提取统计: 总面积过滤={}, 点数不足={}, 提取失败={}, 成功={}",
-                skippedByArea, skippedByPoints, skippedByBox, allBoxes.size());
+        log.info("NMS前文本框数量: {}", boxes.size());
 
-        return allBoxes;
-    }
-
-
-
-    /**
-     * NMS非极大值抑制
-     */
-    private List<List<Point>> nms(List<List<Point>> boxes) {
-        float iouThreshold = config.getNmsIouThreshold();
-
-        if (boxes.size() < 2) {
-            log.info("NMS: 文本框数量少于2，跳过");
-            return boxes;
-        }
-
-        log.info("NMS开始: 输入={}, IoU阈值={}", boxes.size(), iouThreshold);
-
-        List<Rect> rects = new ArrayList<>();
-        List<Double> areas = new ArrayList<>();
-        for (List<Point> box : boxes) {
-            Rect rect = OpenCVUtil.getBoundingRect(box);
-            rects.add(rect);
-            areas.add(rect.area());
-            log.info("文本框: rect={}, area={}", rect, rect.area());
-        }
-
-        // 按面积降序排序
-        List<Integer> indices = new ArrayList<>();
-        for (int i = 0; i < boxes.size(); i++) {
-            indices.add(i);
-        }
-        indices.sort((a, b) -> Double.compare(areas.get(b), areas.get(a)));
-
-        log.info("NMS排序后前5个面积: {}",
-                indices.stream().limit(5).map(areas::get).collect(Collectors.toList()));
-
-        boolean[] suppressed = new boolean[boxes.size()];
-        List<List<Point>> result = new ArrayList<>();
-        int suppressedCount = 0;
-
-        for (int i = 0; i < indices.size(); i++) {
-            int idx = indices.get(i);
-            if (suppressed[idx]) {
-                continue;
-            }
-
-            result.add(boxes.get(idx));
-
-            for (int j = i + 1; j < indices.size(); j++) {
-                int otherIdx = indices.get(j);
-                if (suppressed[otherIdx]) {
-                    continue;
-                }
-
-                float iou = OpenCVUtil.computeIoU(rects.get(idx), rects.get(otherIdx));
-
-                if (iou > iouThreshold) {
-                    suppressed[otherIdx] = true;
-                    suppressedCount++;
-                    log.trace("抑制文本框: iou={}, idx={}", iou, otherIdx);
-                }
-            }
-        }
-
-        log.info("NMS完成: 输入={}, 输出={}, 抑制={}, IoU阈值={}",
-                boxes.size(), result.size(), suppressedCount, iouThreshold);
-
-        return result;
-    }
-
-    /**
-     * 还原文本框到原始图像尺寸
-     * 完全对齐 PaddleOCR 官方实现
-     *
-     * 官方做法：直接除以缩放比例，不做 clamp
-     * 超出边界的框会在后续的 filterInvalidBoxes 中被过滤
-     */
-    private List<List<Point>> restoreBoxesToOriginal(List<List<Point>> boxes,
-                                                     ModelProcessContext context) {
-        float scale = context.getScale();
-        int originalWidth = context.getOriginalWidth();
-        int originalHeight = context.getOriginalHeight();
-
-        log.info("========== 坐标还原参数 ==========");
-        log.info("缩放比例 scale: {}", scale);
-        log.info("原始图像尺寸: {}x{}", originalWidth, originalHeight);
-        log.info("还原前文本框数量: {}", boxes.size());
-
-        List<List<Point>> restoredBoxes = new ArrayList<>();
-        int outOfBoundsCount = 0;
-
-        for (int i = 0; i < boxes.size(); i++) {
+        // 打印NMS前的坐标信息
+        for (int i = 0; i < Math.min(boxes.size(), 5); i++) {
             List<Point> box = boxes.get(i);
-
-            log.info("还原前[{}]: 坐标点:", i);
+            log.info("NMS前[{}]: 坐标点:", i);
             for (int j = 0; j < box.size(); j++) {
                 Point p = box.get(j);
                 log.info("  点{}: ({}, {})", j, p.x, p.y);
             }
-
-            // 还原坐标：直接除以缩放比例，不做 clamp（官方做法）
-            List<Point> restored = new ArrayList<>();
-            boolean outOfBounds = false;
-
-            for (Point p : box) {
-                double restoredX = p.x / scale;
-                double restoredY = p.y / scale;
-                restored.add(new Point(restoredX, restoredY));
-
-                // 检查是否超出边界（仅用于日志，不进行 clamp）
-                if (restoredX < 0 || restoredX > originalWidth ||
-                        restoredY < 0 || restoredY > originalHeight) {
-                    outOfBounds = true;
-                }
-            }
-
-            restoredBoxes.add(restored);
-
-            log.info("还原后[{}]: 坐标点:", i);
-            for (int j = 0; j < restored.size(); j++) {
-                Point p = restored.get(j);
-                log.info("  点{}: ({}, {})", j, p.x, p.y);
-            }
-
             // 计算边界框
-            double minX = restored.stream().mapToDouble(p -> p.x).min().orElse(0);
-            double minY = restored.stream().mapToDouble(p -> p.y).min().orElse(0);
-            double maxX = restored.stream().mapToDouble(p -> p.x).max().orElse(0);
-            double maxY = restored.stream().mapToDouble(p -> p.y).max().orElse(0);
-            log.info("还原后[{}] 边界框: x=[{}, {}], y=[{}, {}], 宽={}, 高={}",
+            double minX = box.stream().mapToDouble(p -> p.x).min().orElse(0);
+            double minY = box.stream().mapToDouble(p -> p.y).min().orElse(0);
+            double maxX = box.stream().mapToDouble(p -> p.x).max().orElse(0);
+            double maxY = box.stream().mapToDouble(p -> p.y).max().orElse(0);
+            log.info("NMS前[{}] 边界框: x=[{}, {}], y=[{}, {}], 宽={}, 高={}",
                     i, minX, maxX, minY, maxY, maxX - minX, maxY - minY);
         }
 
-        log.info("坐标还原完成，还原后文本框数量: {}", restoredBoxes.size());
+        // 5. NMS
+        List<Integer> indices = DBPostProcess.nmsBoxes(boxes, scores, DBPostProcess.BOX_THRESH, DBPostProcess.NMS_IOU_THRESH);
+        List<List<Point>> nmsBoxes = new ArrayList<>();
+        for (int idx : indices) {
+            nmsBoxes.add(boxes.get(idx));
+        }
+
+        log.info("NMS后文本框数量: {}", nmsBoxes.size());
+
+        // 打印NMS后的坐标信息
+        for (int i = 0; i < Math.min(nmsBoxes.size(), 5); i++) {
+            List<Point> box = nmsBoxes.get(i);
+            log.info("NMS后[{}]: 坐标点:", i);
+            for (int j = 0; j < box.size(); j++) {
+                Point p = box.get(j);
+                log.info("  点{}: ({}, {})", j, p.x, p.y);
+            }
+            double minX = box.stream().mapToDouble(p -> p.x).min().orElse(0);
+            double minY = box.stream().mapToDouble(p -> p.y).min().orElse(0);
+            double maxX = box.stream().mapToDouble(p -> p.x).max().orElse(0);
+            double maxY = box.stream().mapToDouble(p -> p.y).max().orElse(0);
+            log.info("NMS后[{}] 边界框: x=[{}, {}], y=[{}, {}], 宽={}, 高={}",
+                    i, minX, maxX, minY, maxY, maxX - minX, maxY - minY);
+        }
+
+        // 6. 坐标还原
+        float scale = context.getScale();
+        log.info("========== 坐标还原 ==========");
+        log.info("缩放比例 scale: {}", scale);
+        log.info("原始图像尺寸: {}x{}", context.getOriginalWidth(), context.getOriginalHeight());
+        log.info("还原前文本框数量: {}", nmsBoxes.size());
+
+        List<List<Point>> restoredBoxes = DBPostProcess.restoreBoxes(nmsBoxes, scale);
+
+        log.info("还原后文本框数量: {}", restoredBoxes.size());
+
+        // 打印还原后的坐标信息
+        for (int i = 0; i < Math.min(restoredBoxes.size(), 5); i++) {
+            List<Point> box = restoredBoxes.get(i);
+            log.info("还原后[{}]: 坐标点:", i);
+            for (int j = 0; j < box.size(); j++) {
+                Point p = box.get(j);
+                log.info("  点{}: ({}, {})", j, p.x, p.y);
+            }
+            double minX = box.stream().mapToDouble(p -> p.x).min().orElse(0);
+            double minY = box.stream().mapToDouble(p -> p.y).min().orElse(0);
+            double maxX = box.stream().mapToDouble(p -> p.x).max().orElse(0);
+            double maxY = box.stream().mapToDouble(p -> p.y).max().orElse(0);
+            log.info("还原后[{}] 边界框: x=[{}, {}], y=[{}, {}], 宽={}, 高={}",
+                    i, minX, maxX, minY, maxY, maxX - minX, maxY - minY);
+
+            // 验证坐标是否在原始图像范围内
+            boolean inBounds = true;
+            for (Point p : box) {
+                if (p.x < 0 || p.x > context.getOriginalWidth() ||
+                        p.y < 0 || p.y > context.getOriginalHeight()) {
+                    inBounds = false;
+                    break;
+                }
+            }
+            log.info("还原后[{}] 坐标是否在图像范围内: {}", i, inBounds);
+        }
+
+        log.info("坐标还原完成");
 
         return restoredBoxes;
     }
-
-
-
     /**
-     * 过滤无效检测框
+     * 过滤无效检测框（对齐官方）
      */
     private List<List<Point>> filterInvalidBoxes(List<List<Point>> boxes, int imgWidth, int imgHeight) {
         if (boxes.isEmpty()) {
@@ -478,13 +554,13 @@ public class DetProcess implements AutoCloseable {
         }
 
         List<List<Point>> filtered = new ArrayList<>();
+        int outOfBoundsCount = 0;
 
         for (List<Point> box : boxes) {
             if (box.size() != 4) {
                 continue;
             }
 
-            // 边界检查
             boolean outOfBounds = false;
             for (Point p : box) {
                 if (p.x < -5 || p.x > imgWidth + 5 || p.y < -5 || p.y > imgHeight + 5) {
@@ -493,31 +569,21 @@ public class DetProcess implements AutoCloseable {
                 }
             }
             if (outOfBounds) {
+                outOfBoundsCount++;
                 continue;
             }
 
             Rect rect = OpenCVUtil.getBoundingRect(box);
-
-            // 尺寸检查
-            if (rect.width < DEFAULT_MIN_BOX_WIDTH || rect.height < DEFAULT_MIN_BOX_HEIGHT) {
-                log.debug("过滤：框太小 ({}x{})", rect.width, rect.height);
-                continue;
-            }
-
-            // 宽高比检查
-            float aspectRatio = (float) Math.max(rect.width, rect.height) / Math.min(rect.width, rect.height);
-            if (aspectRatio > DEFAULT_MAX_ASPECT_RATIO) {
-                log.debug("过滤：宽高比过大 ({})", aspectRatio);
-                continue;
-            }
-
-            // 面积检查
             if (rect.area() < DEFAULT_MIN_BOX_AREA) {
                 log.debug("过滤：面积过小 ({})", rect.area());
                 continue;
             }
 
             filtered.add(box);
+        }
+
+        if (outOfBoundsCount > 0) {
+            log.debug("过滤：{} 个文本框超出边界", outOfBoundsCount);
         }
 
         log.debug("框过滤完成: {} -> {}", boxes.size(), filtered.size());

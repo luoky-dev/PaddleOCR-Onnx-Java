@@ -147,14 +147,11 @@ public class ClsProcess implements AutoCloseable {
      * 预处理：转RGB + 缩放到固定尺寸 + 归一化
      */
     private Mat preprocess(Mat image) {
-        Mat result = MatPipeline.fromMatCopy(image)
+        return MatPipeline.fromMatCopy(image)
                 .toRGB()
                 .resize(MODEL_INPUT_WIDTH, MODEL_INPUT_HEIGHT)
                 .normalize()
                 .get();
-        log.info("分类预处理后图像类型: {}", result.type());
-        log.info("CV_32FC3 = {}, 实际类型 = {}", CvType.CV_32FC3, result.type());
-        return result;
     }
 
     /**

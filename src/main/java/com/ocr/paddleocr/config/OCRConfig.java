@@ -27,6 +27,8 @@ public class OCRConfig implements Serializable {
     private String recModelPath = "src/main/java/resources/models/chi/rec_model.onnx";
     @Builder.Default
     private String dictPath = "src/main/java/resources/models/chi/ppocr_keys_v1.txt";
+    @Builder.Default
+    private String outPath = "src/main/java/resources/test/output/chi_test_box.jpg";
 
     // ==================== 检测模型参数 ====================
 
@@ -46,6 +48,8 @@ public class OCRConfig implements Serializable {
     private int detImageWidth = 960;
     @Builder.Default
     private boolean detUsePolygon = false;
+    @Builder.Default
+    private boolean isDebugMode = true;
 
     // ==================== NMS 配置（新增） ====================
 
@@ -144,7 +148,7 @@ public class OCRConfig implements Serializable {
      * - 裁剪图 (cropped/box_xxx.jpg)
      */
     @Builder.Default
-    private boolean visualize = false;
+    private boolean visualize = true;
 
     /**
      * 是否保存裁剪的文本框图片 - 当 visualize=true 时自动开启
@@ -273,7 +277,7 @@ public class OCRConfig implements Serializable {
 
     public static OCRConfig defaultEnglish() {
         return OCRConfig.builder()
-                .lang("en")
+                .lang("ch")
                 .build();
     }
 

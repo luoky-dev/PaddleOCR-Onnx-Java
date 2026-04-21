@@ -235,14 +235,14 @@ public class PaddleOCR implements Closeable {
             try {
                 Mat cropped = OpenCVUtil.perspectiveTransformCrop(rawMat, points);
                 if (!cropped.empty()) {
-                    log.info("文本框[{}] 裁剪成功: {}x{}", i, cropped.width(), cropped.height());
+                    log.debug("文本框[{}] 裁剪成功: {}x{}", i, cropped.width(), cropped.height());
                     box.setRawMat(cropped);
                 } else {
-                    log.info("文本框[{}] 裁剪失败", i);
+                    log.debug("文本框[{}] 裁剪失败", i);
                     box.setRawMat(new Mat());
                 }
             } catch (Exception e) {
-                log.info("文本框[{}] 裁剪异常: {}", i, e.getMessage());
+                log.error("文本框[{}] 裁剪异常: {}", i, e.getMessage());
                 box.setRawMat(new Mat());
             }
         }
