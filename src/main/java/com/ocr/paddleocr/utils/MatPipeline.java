@@ -508,6 +508,20 @@ public class MatPipeline {
     // ==================== 形态学操作 ====================
 
     /**
+     * 创建形态学操作的结构元素
+     * @param shape 结构元素的形状
+     * @param ksize 核的大小（宽度, 高度）
+     * @return this
+     */
+    public MatPipeline structuringElement(int shape, Size ksize) {
+        return apply(mat -> {
+            Mat result = new Mat();
+            Imgproc.getStructuringElement(shape, ksize);
+            return result;
+        });
+    }
+
+    /**
      * 膨胀操作
      *
      * @param kernel 结构元素
@@ -595,7 +609,7 @@ public class MatPipeline {
     }
 
     /**
-     * 闭运算（先膨胀后腐蚀）
+     * 闭运算
      *
      * @param kernelSize 结构元素大小
      * @return this

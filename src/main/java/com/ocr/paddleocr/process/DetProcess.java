@@ -83,11 +83,6 @@ public class DetProcess implements AutoCloseable {
             float[][][] parseResult = parseOutput(output);
             log.info("分割图尺寸: {}x{}", parseResult[0].length, parseResult[0][0].length);
 
-            // 保存概率图热力图
-            if (config.isVisualize()) {
-                saveProbabilityHeatmap(parseResult[0], "prob_map");
-            }
-
             // 5. DB后处理获取文本框
             List<List<Point>> boxes = dbPostProcess(parseResult[0], context);
             log.info("DB后处理检测到 {} 个文本框", boxes.size());
@@ -98,9 +93,6 @@ public class DetProcess implements AutoCloseable {
                 Mat visualized = drawDetectionBoxes(originalImage, boxes);
                 saveImage(visualized, "detection_boxes");
                 visualized.release();
-
-                // 保存边缘检测图
-                saveEdgeMap(originalImage, "edges");
             }
 
             // 7. 过滤无效框（对齐官方）
@@ -131,67 +123,6 @@ public class DetProcess implements AutoCloseable {
         }
     }
 
-    /**
-     * 保存概率图热力图
-     */
-    private void saveProbabilityHeatmap(float[][] probMap, String filename) {
-        try {
-            int height = probMap.length;
-            int width = probMap[0].length;
-
-            // 创建概率图Mat
-            Mat probMat = new Mat(height, width, CvType.CV_32FC1);
-            for (int i = 0; i < height; i++) {
-                for (int j = 0; j < width; j++) {
-                    probMat.put(i, j, probMap[i][j] * 255);
-                }
-            }
-
-            // 转换为8位图像
-            Mat prob8u = new Mat();
-            probMat.convertTo(prob8u, CvType.CV_8UC1);
-
-            // 应用彩色映射
-            Mat heatmap = new Mat();
-            Imgproc.applyColorMap(prob8u, heatmap, Imgproc.COLORMAP_JET);
-
-            // 保存
-            saveImage(heatmap, filename + "_heatmap");
-
-            // 保存原始概率图（灰度）
-            saveImage(prob8u, filename + "_gray");
-
-            probMat.release();
-            prob8u.release();
-            heatmap.release();
-
-            log.debug("保存概率图: {}", filename);
-        } catch (Exception e) {
-            log.warn("保存概率图失败: {}", e.getMessage());
-        }
-    }
-
-
-    /**
-     * 保存边缘检测图
-     */
-    private void saveEdgeMap(Mat image, String filename) {
-        try {
-            Mat gray = new Mat();
-            Mat edges = new Mat();
-            Imgproc.cvtColor(image, gray, Imgproc.COLOR_BGR2GRAY);
-
-            // Canny边缘检测
-            Imgproc.Canny(gray, edges, 50, 150);
-            saveImage(edges, filename + "_canny");
-
-            gray.release();
-            edges.release();
-            log.debug("保存边缘检测图: {}", filename);
-        } catch (Exception e) {
-            log.warn("保存边缘检测图失败: {}", e.getMessage());
-        }
-    }
 
     /**
      * 绘制检测框
@@ -335,11 +266,6 @@ public class DetProcess implements AutoCloseable {
         Mat resized = new Mat();
         Imgproc.resize(context.getRawMat(), resized, new Size(newWidth, newHeight));
 
-        // 保存缩放后的图像
-        if (config.isVisualize()) {
-            saveImage(resized, "preprocessed_resized");
-        }
-
         Mat floatMat = new Mat();
         resized.convertTo(floatMat, CvType.CV_32FC3, 1.0 / 255.0);
         resized.release();
@@ -398,38 +324,65 @@ public class DetProcess implements AutoCloseable {
         }
     }
 
-    /**
-     * DB后处理 - 完全对齐官方
-     */
+//    /**
+//     * DB后处理 - 完全对齐官方
+//     */
+//    private List<List<Point>> dbPostProcessTest(float[][] probMap, ModelProcessContext context){
+//        Mat structuringElement = MatPipeline.create().structuringElement(Imgproc.MORPH_RECT,new Size(2,2)).get();
+//        MatPipeline.fromMapCopy(probMap)
+//                .convertTo(CvType.CV_32FC1)
+//                .threshold(DBPostProcess.BOX_THRESH,255,CvType.CV_8UC1)
+//                .dilate(structuringElement)
+//                .morphologyEx()
+//        ;
+//    }
+
+
     /**
      * DB后处理 - 完全对齐官方
      */
     private List<List<Point>> dbPostProcess(float[][] probMap, ModelProcessContext context) {
-        // 1. 二值化
-        boolean[][] bitmap = new boolean[probMap.length][probMap[0].length];
-        for (int i = 0; i < probMap.length; i++) {
-            for (int j = 0; j < probMap[0].length; j++) {
-                bitmap[i][j] = probMap[i][j] > DBPostProcess.THRESH;
+//        // 1. 二值化
+//        boolean[][] bitmap = new boolean[probMap.length][probMap[0].length];
+//        for (int i = 0; i < probMap.length; i++) {
+//            for (int j = 0; j < probMap[0].length; j++) {
+//                bitmap[i][j] = probMap[i][j] > DBPostProcess.THRESH;
+//            }
+//        }
+//
+//        // 2. 膨胀操作
+//        bitmap = DBPostProcess.expandBitmap(bitmap, probMap, DBPostProcess.BOX_THRESH);
+//
+//        // 3. 查找轮廓
+//        List<MatOfPoint> contours = DBPostProcess.findContours(bitmap);
+//
+
+        int height = probMap.length;
+        int width = probMap[0].length;
+
+        Mat probMat = new Mat(height, width, CvType.CV_32FC1);
+        for (int i = 0; i < height; i++) {
+            for (int j = 0; j < width; j++) {
+                probMat.put(i, j, probMap[i][j]);
             }
         }
 
-        // 2. 膨胀操作
-        bitmap = DBPostProcess.expandBitmap(bitmap, probMap, DBPostProcess.BOX_THRESH);
+        Mat binary = new Mat();
+        float thresh = DBPostProcess.THRESH;
+        Imgproc.threshold(probMat, binary, thresh, 255, Imgproc.THRESH_BINARY);
+        binary.convertTo(binary, CvType.CV_8UC1);
 
-        // 3. 查找轮廓
-        List<MatOfPoint> contours = DBPostProcess.findContours(bitmap);
+        Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(2, 2));
+        Mat dilated = new Mat();
+        Imgproc.dilate(binary, dilated, kernel);
 
-        // 保存轮廓图像
-        if (config.isVisualize() && !contours.isEmpty()) {
-            Mat binaryMat = new Mat(probMap.length, probMap[0].length, CvType.CV_8UC1);
-            for (int i = 0; i < probMap.length; i++) {
-                for (int j = 0; j < probMap[0].length; j++) {
-                    binaryMat.put(i, j, bitmap[i][j] ? 255 : 0);
-                }
-            }
-            saveContoursImage(binaryMat, contours, "contours");
-            binaryMat.release();
-        }
+        Mat closed = new Mat();
+        Imgproc.morphologyEx(dilated, closed, Imgproc.MORPH_CLOSE, kernel);
+
+        List<MatOfPoint> contours = new ArrayList<>();
+        Mat hierarchy = new Mat();
+        Imgproc.findContours(closed, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE);
+
 
         // 4. 提取文本框
         List<List<Point>> boxes = new ArrayList<>();
@@ -442,22 +395,43 @@ public class DetProcess implements AutoCloseable {
             double score = DBPostProcess.getScore(contour, probMap);
             if (score < DBPostProcess.BOX_THRESH) continue;
 
-            MatOfPoint2f contour2f = new MatOfPoint2f(contour.toArray());
-            RotatedRect rect = Imgproc.minAreaRect(contour2f);
-            contour2f.release();
+            Point[] contourPoints = contour.toArray();
+            MatOfPoint2f contour2f = new MatOfPoint2f(contourPoints);
+            double perimeter = Imgproc.arcLength(contour2f, true);
+            if (perimeter < 1e-6) {
+                contour2f.release();
+                continue;
+            }
 
-            double perimeter = Imgproc.arcLength(new MatOfPoint2f(contour.toArray()), true);
             double distance = area * DBPostProcess.UNCLIP_RATIO / perimeter;
+            List<Point> box = DBPostProcess.unclipPolygon(contourPoints, distance);
+            if (box.size() < 4) {
+                contour2f.release();
+                continue;
+            }
 
-            List<Point> box = DBPostProcess.unclip(rect, distance);
-            double epsilon = 0.002 * Imgproc.arcLength(new MatOfPoint2f(box.toArray(new Point[0])), true);
+            MatOfPoint2f box2f = new MatOfPoint2f(box.toArray(new Point[0]));
+            double epsilon = 0.002 * Imgproc.arcLength(box2f, true);
             box = DBPostProcess.approxPolyDP(box, epsilon, true);
 
-            if (box.size() == 4) {
-                boxes.add(box);
-                scores.add((float) score);
+            if (box.size() != 4) {
+                RotatedRect expandedRect = Imgproc.minAreaRect(box2f);
+                Point[] vertices = new Point[4];
+                expandedRect.points(vertices);
+                box = java.util.Arrays.asList(vertices);
             }
+
+            box2f.release();
+            contour2f.release();
+
+            boxes.add(box);
+            scores.add((float) score);
         }
+
+        Mat resized = new Mat();
+        Imgproc.resize(context.getRawMat(), resized, new Size(context.getDetPrepWidth(), context.getDetPrepHeight()));
+        ImageUtil.saveDrawResult(ImageUtil.drawBoxes(resized, boxes),"src/main/java/resources/test/output/test1.jpg");
+
 
         log.info("NMS前文本框数量: {}", boxes.size());
 
@@ -503,6 +477,9 @@ public class DetProcess implements AutoCloseable {
                     i, minX, maxX, minY, maxY, maxX - minX, maxY - minY);
         }
 
+        ImageUtil.saveDrawResult(ImageUtil.drawBoxes(resized, nmsBoxes),"src/main/java/resources/test/output/test2.jpg");
+        resized.release();
+
         // 6. 坐标还原
         float scale = context.getScale();
         log.info("========== 坐标还原 ==========");
@@ -513,6 +490,7 @@ public class DetProcess implements AutoCloseable {
         List<List<Point>> restoredBoxes = DBPostProcess.restoreBoxes(nmsBoxes, scale);
 
         log.info("还原后文本框数量: {}", restoredBoxes.size());
+        ImageUtil.saveDrawResult(ImageUtil.drawBoxes(context.getRawMat(), restoredBoxes),"src/main/java/resources/test/output/test3.jpg");
 
         // 打印还原后的坐标信息
         for (int i = 0; i < Math.min(restoredBoxes.size(), 5); i++) {
@@ -545,6 +523,59 @@ public class DetProcess implements AutoCloseable {
 
         return restoredBoxes;
     }
+
+    private List<org.opencv.core.Point> unclipPolygon(org.opencv.core.Point[] vertices, double distance) {
+        List<org.opencv.core.Point> expanded = new ArrayList<>();
+        int n = vertices.length;
+
+        for (int i = 0; i < n; i++) {
+            org.opencv.core.Point p1 = vertices[i];
+            org.opencv.core.Point p2 = vertices[(i + 1) % n];
+            org.opencv.core.Point p3 = vertices[(i + 2) % n];
+
+            double dx1 = p2.x - p1.x;
+            double dy1 = p2.y - p1.y;
+            double len1 = Math.sqrt(dx1 * dx1 + dy1 * dy1);
+            if (len1 > 1e-5) {
+                dx1 /= len1;
+                dy1 /= len1;
+            }
+
+            double dx2 = p3.x - p2.x;
+            double dy2 = p3.y - p2.y;
+            double len2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+            if (len2 > 1e-5) {
+                dx2 /= len2;
+                dy2 /= len2;
+            }
+
+            double bisectorX = dx1 + dx2;
+            double bisectorY = dy1 + dy2;
+            double bisectorLen = Math.sqrt(bisectorX * bisectorX + bisectorY * bisectorY);
+
+            if (bisectorLen > 1e-5) {
+                bisectorX /= bisectorLen;
+                bisectorY /= bisectorLen;
+
+                double dot = Math.max(-1, Math.min(1, dx1 * dx2 + dy1 * dy2));
+                double angle = Math.acos(dot);
+                double scale = distance / Math.sin(angle / 2);
+
+                expanded.add(new org.opencv.core.Point(p2.x + bisectorX * scale, p2.y + bisectorY * scale));
+            } else {
+                expanded.add(p2);
+            }
+        }
+        return expanded;
+    }
+
+
+    private double calculateUnclipDistance(Size size, double area, float ratio) {
+        double minSize = Math.min(size.width, size.height);
+        if (minSize < 1e-5) return 0;
+        return Math.max((ratio - 1.0) * minSize / 2.0, 0);
+    }
+
     /**
      * 过滤无效检测框（对齐官方）
      */

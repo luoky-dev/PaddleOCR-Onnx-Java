@@ -7,6 +7,7 @@ import com.ocr.paddleocr.process.ClsProcess;
 import com.ocr.paddleocr.process.DetProcess;
 import com.ocr.paddleocr.domain.ModelProcessContext;
 import com.ocr.paddleocr.process.RecProcess;
+import com.ocr.paddleocr.utils.ImageUtil;
 import com.ocr.paddleocr.utils.MatPipeline;
 import com.ocr.paddleocr.utils.OpenCVUtil;
 import lombok.Getter;
@@ -234,6 +235,7 @@ public class PaddleOCR implements Closeable {
             // 尝试裁剪
             try {
                 Mat cropped = OpenCVUtil.perspectiveTransformCrop(rawMat, points);
+                ImageUtil.saveDrawResult(cropped,"src/main/java/resources/test/output/cropped/"+i+".jpg");
                 if (!cropped.empty()) {
                     log.debug("文本框[{}] 裁剪成功: {}x{}", i, cropped.width(), cropped.height());
                     box.setRawMat(cropped);

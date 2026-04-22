@@ -1,6 +1,7 @@
 package com.ocr.paddleocr;
 
 import com.ocr.paddleocr.service.PaddleOCR;
+import com.ocr.paddleocr.service.PaddleOCRUpdateService;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
@@ -21,7 +22,7 @@ public class PaddleOCRTest {
         log.info("========== 基础识别测试 ==========");
         log.info("图片路径: {}", imagePath);
 
-        try (PaddleOCR ocr = new PaddleOCR()) {
+        try (PaddleOCRUpdateService ocr = new PaddleOCRUpdateService()) {
             // 执行OCR识别
             String jsonResult = ocr.ocr(imagePath);
 
