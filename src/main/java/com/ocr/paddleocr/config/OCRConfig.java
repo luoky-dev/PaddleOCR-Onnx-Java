@@ -30,6 +30,14 @@ public class OCRConfig implements Serializable {
     @Builder.Default
     private String outPath = "src/main/java/resources/test/output/chi_test_box.jpg";
 
+    // 模型开关
+    @Builder.Default
+    private boolean useDet = true;
+    @Builder.Default
+    private boolean useRec = true;
+    @Builder.Default
+    private boolean useCls = true;
+
     // ==================== 检测模型参数 ====================
 
     @Builder.Default

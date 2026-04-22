@@ -1,4 +1,4 @@
-﻿package com.ocr.paddleocr.service;
+package com.ocr.paddleocr.service;
 
 import com.google.gson.Gson;
 import com.ocr.paddleocr.config.OCRConfig;
@@ -19,9 +19,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/**
- * 鍩轰簬 Update 娴佺▼鐨?OCR 鏈嶅姟锛? * image -> det(update) -> crop -> cls(update) -> rec(update) -> json銆? *
- * 璇存槑锛? * 1) 涓嶆帴鍏ユ棫涓绘祦绋嬶紝鍗曠嫭浣跨敤銆? * 2) 涓嶉澶栧垱寤烘柊閰嶇疆绫伙紝绠楁硶鍙傛暟浣跨敤鍚?ProcessUpdate 涓殑 static 榛樿鍊笺€? */
 @Slf4j
 public class PaddleOCRUpdateService implements Closeable {
     static {
@@ -29,7 +26,6 @@ public class PaddleOCRUpdateService implements Closeable {
         nu.pattern.OpenCV.loadLocally();
     }
 
-    // 浠呯敤浜庢ā鍨?瀛楀吀璺緞锛岀畻娉曢槇鍊肩瓑浠嶇敱鍚?Update Process 鐨?static 甯搁噺鎺у埗銆?
     private static final String DET_MODEL_PATH = "src/main/java/resources/models/chi/det_model.onnx";
     private static final String CLS_MODEL_PATH = "src/main/java/resources/models/chi/cls_model.onnx";
     private static final String REC_MODEL_PATH = "src/main/java/resources/models/chi/rec_model.onnx";
@@ -69,14 +65,12 @@ public class PaddleOCRUpdateService implements Closeable {
         initialized = true;
     }
 
-    /**
-     * 鍏ㄦ祦绋?OCR锛岃繑鍥?JSON 瀛楃涓层€?     */
+
     public String ocr(String imagePath) {
         return gson.toJson(ocrToObject(imagePath));
     }
 
-    /**
-     * 鍏ㄦ祦绋?OCR锛岃繑鍥炲璞°€?     */
+
     public OCRResult ocrToObject(String imagePath) {
         checkState();
         long start = System.currentTimeMillis();
@@ -109,16 +103,17 @@ public class PaddleOCRUpdateService implements Closeable {
                         .build();
             }
 
-            // 2) Crop for cls/rec input
+
             cropTextBoxes(context);
 
-            // 3) CLS锛堝け璐ユ椂闄嶇骇缁х画 rec锛?            clsProcess.classify(context);
+
+            clsProcess.classify(context);
             if (!context.isSuccess()) {
                 log.warn("ClsProcessUpdate failed, continue rec with raw crops: {}", context.getError());
                 context.setSuccess(true);
             }
 
-            // 4) REC
+
             recProcess.recognize(context);
             if (!context.isSuccess()) {
                 return builder.error(context.getError() == null ? "Recognition failed" : context.getError())
@@ -126,7 +121,7 @@ public class PaddleOCRUpdateService implements Closeable {
                         .build();
             }
 
-            // 5) Build response
+
             List<OCRPrediction> predictions = convertToPredictions(context.getBoxes());
             return builder.success(true)
                     .predictions(predictions)
@@ -149,8 +144,7 @@ public class PaddleOCRUpdateService implements Closeable {
         }
     }
 
-    /**
-     * 鎸夊洓鐐规鍋氶€忚瑁佸壀锛屼负 cls/rec 鎻愪緵鏇磋鏁寸殑鏂囨湰鍥俱€?     */
+
     private static void cropTextBoxes(ModelProcessContext context) {
         if (context.getRawMat() == null || context.getRawMat().empty() || context.getBoxes() == null) {
             return;
