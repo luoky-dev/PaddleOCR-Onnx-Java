@@ -6,7 +6,10 @@ import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.List;
+import java.util.Base64;
 
 @Slf4j
 public class ImageUtil {
@@ -224,19 +227,29 @@ public class ImageUtil {
     /**
      * 保存绘制结果到文件
      */
-    public static void saveDrawResult(Mat image, String outputPath) {
+    public static void saveImage(Mat image, String outputPath) {
         if (image == null || image.empty()) {
-            log.warn("图像为空，无法保存");
-            return;
+            throw new IllegalArgumentException("Image cannot be empty");
         }
 
         File outputFile = new File(outputPath);
         File parentDir = outputFile.getParentFile();
-        if (parentDir != null && !parentDir.exists()) {
-            parentDir.mkdirs();
+        if (parentDir != null && !parentDir.exists() && !parentDir.mkdirs()) {
+            throw new IllegalStateException("Failed to create parent directory: " + parentDir.getAbsolutePath());
         }
 
         Imgcodecs.imwrite(outputPath, image);
         log.info("绘制结果已保存: {}", outputPath);
+    }
+
+    public static Mat getImage(String inputPath){
+        if (inputPath == null || inputPath.trim().isEmpty()) {
+            throw new IllegalArgumentException("Path cannot be empty");
+        }
+        Mat image = Imgcodecs.imread(inputPath);
+        if (image.empty()) {
+            throw new IllegalArgumentException("Unable to read image");
+        }
+        return image;
     }
 }

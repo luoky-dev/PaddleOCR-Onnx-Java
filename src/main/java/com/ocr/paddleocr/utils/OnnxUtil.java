@@ -1,9 +1,6 @@
 package com.ocr.paddleocr.utils;
 
-import ai.onnxruntime.OnnxTensor;
-import ai.onnxruntime.OrtEnvironment;
-import ai.onnxruntime.OrtException;
-import ai.onnxruntime.OrtSession;
+import ai.onnxruntime.*;
 import ai.onnxruntime.OrtSession.SessionOptions;
 import com.ocr.paddleocr.config.OCRConfig;
 import org.opencv.core.Mat;
@@ -101,5 +98,20 @@ public class OnnxUtil {
         // 设置执行模式
         sessionOptions.setExecutionMode(SessionOptions.ExecutionMode.SEQUENTIAL);
         return env.createSession(modelPath, sessionOptions);
+    }
+
+    public static float[][] parseOutput(OrtSession.Result output) throws OrtException {
+        OnnxValue out = output.get(0);
+        try {
+            float[][][][] v4 = (float[][][][]) out.getValue();
+            return v4[0][0];
+        } catch (ClassCastException e1) {
+            try {
+                float[][][] v3 = (float[][][]) out.getValue();
+                return v3[0];
+            } catch (ClassCastException e2) {
+                throw new OrtException("Unsupported det output shape");
+            }
+        }
     }
 }

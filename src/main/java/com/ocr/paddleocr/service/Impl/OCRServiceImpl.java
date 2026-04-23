@@ -1,14 +1,20 @@
 package com.ocr.paddleocr.service.Impl;
 
 import com.google.gson.Gson;
+import com.ocr.paddleocr.config.ModelConfig;
 import com.ocr.paddleocr.config.OCRConfig;
+import com.ocr.paddleocr.domain.OCRContext;
 import com.ocr.paddleocr.domain.OCRResult;
 import com.ocr.paddleocr.process.ClsProcessor;
 import com.ocr.paddleocr.process.DetProcessor;
 import com.ocr.paddleocr.process.ModelManager;
 import com.ocr.paddleocr.process.RecProcessor;
+import com.ocr.paddleocr.utils.ImageUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.opencv.core.Mat;
+
+import javax.imageio.ImageIO;
+import java.io.File;
 
 /**
  * OCR服务实现类 - 单例模式
@@ -24,7 +30,8 @@ public class OCRServiceImpl {
     private final DetProcessor detProcessor;
     private final ClsProcessor clsProcessor;
     private final RecProcessor recProcessor;
-    private final OCRConfig config;
+    private final OCRConfig ocrConfig;
+    private final ModelConfig modelConfig;
     private volatile boolean initialized;
 
     /**
@@ -37,14 +44,15 @@ public class OCRServiceImpl {
     /**
      * 私有构造 - 使用自定义配置
      */
-    private OCRServiceImpl(OCRConfig config) {
-        this.config = config;
+    private OCRServiceImpl(OCRConfig ocrConfig) {
+        this.ocrConfig = ocrConfig;
+        this.modelConfig = new ModelConfig();
         this.gson = new Gson();
         try {
             this.modelManager = ModelManager.getInstance();
             synchronized (modelManager) {
                 if (!modelManager.isInitialized()) {
-                    modelManager.init(config);
+                    modelManager.init(ocrConfig);
                 }
             }
             this.detProcessor = new DetProcessor(modelManager);
@@ -105,7 +113,7 @@ public class OCRServiceImpl {
      * @param imagePath 图片路径
      * @return OCRResult对象
      */
-    public OCRResult rec(String imagePath) {
+    private OCRResult rec(String imagePath) {
         OCRResult.OCRResultBuilder builder = OCRResult.builder()
                 .imagePath(imagePath)
                 .success(Boolean.FALSE);
@@ -113,11 +121,15 @@ public class OCRServiceImpl {
         if (!initialized) {
             return builder.error("OCR服务未初始化").build();
         }
-
+        OCRContext context = new OCRContext();
         Mat image = null;
         long startTime = System.currentTimeMillis();
         try {
-
+            // 读取图片
+            Mat rawImage = ImageUtil.getImage(imagePath);
+            context.setRawMat(rawImage);
+            // 图像检测
+            detProcessor.detect(context);
 
             return builder
                     .success(Boolean.TRUE)

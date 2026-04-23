@@ -3,6 +3,7 @@ package com.ocr.paddleocr.process;
 import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtException;
 import ai.onnxruntime.OrtSession;
+import com.ocr.paddleocr.config.ModelConfig;
 import com.ocr.paddleocr.config.OCRConfig;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -19,7 +20,8 @@ public class ModelManager implements AutoCloseable {
     private OrtSession detSession;
     private OrtSession recSession;
     private OrtSession clsSession;
-    private OCRConfig config;
+    private OCRConfig ocrConfig;
+    private ModelConfig modelConfig;
     /**
      * 初始化标志
      */
@@ -46,7 +48,7 @@ public class ModelManager implements AutoCloseable {
     /**
      * 初始化模型管理器
      */
-    public synchronized void init(OCRConfig config) throws Exception {
+    public synchronized void init(OCRConfig ocrConfig) throws Exception {
         if (initialized) {
             log.warn("模型管理器已初始化, 跳过重复加载");
             return;
@@ -55,7 +57,8 @@ public class ModelManager implements AutoCloseable {
         long startTime = System.currentTimeMillis();
         log.info("开始初始化模型管理器");
 
-        this.config = config;
+        this.ocrConfig = ocrConfig;
+        this.modelConfig = new ModelConfig();
 
         // 加载OpenCV
         loadOpenCV();
@@ -98,27 +101,27 @@ public class ModelManager implements AutoCloseable {
         // 配置会话选项
         OrtSession.SessionOptions sessionOptions = new OrtSession.SessionOptions();
         sessionOptions.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT);
-        sessionOptions.setInterOpNumThreads(config.getNumThreads());
-        sessionOptions.setIntraOpNumThreads(config.getNumThreads());
+        sessionOptions.setInterOpNumThreads(ocrConfig.getNumThreads());
+        sessionOptions.setIntraOpNumThreads(ocrConfig.getNumThreads());
 
         // 加载检测模型
-        if (config.isUseDet() && config.getDetModelPath() != null) {
-            log.info("加载检测模型: {}", config.getDetModelPath());
-            this.detSession = env.createSession(config.getDetModelPath(), sessionOptions);
+        if (ocrConfig.isUseDet() && ocrConfig.getDetModelPath() != null) {
+            log.info("加载检测模型: {}", ocrConfig.getDetModelPath());
+            this.detSession = env.createSession(ocrConfig.getDetModelPath(), sessionOptions);
             log.info("检测模型加载完成");
         }
 
         // 加载识别模型
-        if (config.isUseRec() && config.getRecModelPath() != null) {
-            log.info("加载识别模型: {}", config.getRecModelPath());
-            this.recSession = env.createSession(config.getRecModelPath(), sessionOptions);
+        if (ocrConfig.isUseRec() && ocrConfig.getRecModelPath() != null) {
+            log.info("加载识别模型: {}", ocrConfig.getRecModelPath());
+            this.recSession = env.createSession(ocrConfig.getRecModelPath(), sessionOptions);
             log.info("识别模型加载完成");
         }
 
         // 加载分类模型
-        if (config.isUseCls() && config.getClsModelPath() != null) {
-            log.info("加载分类模型: {}", config.getClsModelPath());
-            this.clsSession = env.createSession(config.getClsModelPath(), sessionOptions);
+        if (ocrConfig.isUseCls() && ocrConfig.getClsModelPath() != null) {
+            log.info("加载分类模型: {}", ocrConfig.getClsModelPath());
+            this.clsSession = env.createSession(ocrConfig.getClsModelPath(), sessionOptions);
             log.info("分类模型加载完成");
         }
     }

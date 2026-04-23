@@ -40,20 +40,30 @@ public class OCRConfig implements Serializable {
 
     // ==================== 检测模型参数 ====================
 
+    // 二值化阈值
     @Builder.Default
-    private float detDbThresh = 0.3f;
+    private float detThresh = 0.3f;
+    // 是否使用膨胀
     @Builder.Default
-    private float detDbBoxThresh = 0.5f;
+    private boolean isDilation = true;
+    // 框置信度阈值过滤
     @Builder.Default
-    private float detDbUnclipRatio = 2.5f;
+    private float detBoxThresh = 0.5f;
+    // unclip 扩张比率
     @Builder.Default
-    private float detDilationRatio = 2.0f;;
+    private float detUnclipRatio = 1.6f;
+    @Builder.Default
+    private float detDilationRatio = 2.0f;
     @Builder.Default
     private int detMaxSideLen = 960;
     @Builder.Default
     private int detImageHeight = 960;
     @Builder.Default
     private int detImageWidth = 960;
+    // 最小检测框尺寸过滤（px）
+    @Builder.Default
+    private int detMinSize = 5;
+    // 是否返回多边形（false返回矩形）
     @Builder.Default
     private boolean detUsePolygon = false;
     @Builder.Default
@@ -258,14 +268,14 @@ public class OCRConfig implements Serializable {
     }
 
     public void validate() {
-        if (detDbThresh <= 0 || detDbThresh >= 1) {
-            throw new IllegalArgumentException("detDbThresh必须在0-1之间，当前值: " + detDbThresh);
+        if (detThresh <= 0 || detThresh >= 1) {
+            throw new IllegalArgumentException("detDbThresh必须在0-1之间，当前值: " + detThresh);
         }
-        if (detDbBoxThresh <= 0 || detDbBoxThresh >= 1) {
-            throw new IllegalArgumentException("detDbBoxThresh必须在0-1之间，当前值: " + detDbBoxThresh);
+        if (detBoxThresh <= 0 || detBoxThresh >= 1) {
+            throw new IllegalArgumentException("detDbBoxThresh必须在0-1之间，当前值: " + detBoxThresh);
         }
-        if (detDbUnclipRatio <= 0) {
-            throw new IllegalArgumentException("detDbUnclipRatio必须大于0，当前值: " + detDbUnclipRatio);
+        if (detUnclipRatio <= 0) {
+            throw new IllegalArgumentException("detDbUnclipRatio必须大于0，当前值: " + detUnclipRatio);
         }
         if (recBatchSize <= 0 || recBatchSize > 64) {
             throw new IllegalArgumentException("recBatchSize必须在1-64之间，当前值: " + recBatchSize);
@@ -292,7 +302,7 @@ public class OCRConfig implements Serializable {
     public static OCRConfig defaultChinese() {
         return OCRConfig.builder()
                 .lang("ch")
-                .detDbUnclipRatio(1.5f)
+                .detUnclipRatio(1.5f)
                 .build();
     }
 
@@ -318,8 +328,8 @@ public class OCRConfig implements Serializable {
 
     public static OCRConfig highAccuracy() {
         return OCRConfig.builder()
-                .detDbThresh(0.2f)
-                .detDbBoxThresh(0.3f)
+                .detThresh(0.2f)
+                .detBoxThresh(0.3f)
                 .minConfidence(0.3f)
                 .useAngleCls(true)
                 .visualize(true)
@@ -330,6 +340,6 @@ public class OCRConfig implements Serializable {
     public String toString() {
         return String.format("OCRConfig{lang='%s', useGpu=%s, detDbThresh=%.2f, " +
                         "detDbUnclipRatio=%.1f, recBatchSize=%d, visualize=%s}",
-                lang, useGpu, detDbThresh, detDbUnclipRatio, recBatchSize, visualize);
+                lang, useGpu, detThresh, detUnclipRatio, recBatchSize, visualize);
     }
 }

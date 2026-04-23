@@ -10,7 +10,6 @@ import java.util.List;
 
 /**
  * OpenCV 工具类
- * 提供图像处理常用操作的封装，支持自动资源管理
  */
 public class OpenCVUtil {
 
@@ -166,6 +165,69 @@ public class OpenCVUtil {
         List<Point> ordered = new ArrayList<>(pts);
         ordered.sort(Comparator.comparingDouble(p -> Math.atan2(p.y - cy, p.x - cx)));
         return ordered;
+    }
+
+    /**
+     * RGB图像的归一化 + 标准化
+     * @param rgb RGB通道
+     * @param mean RGB通道的均值
+     * @param std RGB通道的标准差
+     * @return Mat
+     */
+    public static Mat normalize(Mat rgb, float[] mean, float[] std) {
+        // 转换为浮点并归一化x
+        Mat floatMat = new Mat();
+        // 将 0-255 的整数值转换为 0.0-1.0 的浮点数
+        rgb.convertTo(floatMat, CvType.CV_32FC3, 1.0 / 255.0);
+
+        // 分离RGB三个通道
+        List<Mat> channels = new ArrayList<>();
+        Core.split(floatMat, channels);
+
+        // 标准化 (Standardization), 公式: (x - mean) / std
+        // 使数据分布接近标准正态分布, 有助于模型收敛
+        for (int i = 0; i < 3; i++) {
+            // 减去均值
+            Core.subtract(channels.get(i), new Scalar(mean[i]), channels.get(i));
+            // 除以标准差
+            Core.divide(channels.get(i), new Scalar(std[i]), channels.get(i));
+        }
+        // 合并通道
+        Core.merge(channels, floatMat);
+        // 释放临时资源
+        for (Mat ch : channels) {
+            ch.release();
+        }
+        return floatMat;
+    }
+
+    /**
+     * 还原坐标并裁剪检测框
+     * @param boxes 还原前坐标
+     * @param scale 缩放比例
+     * @param srcW 原图像宽度
+     * @param srcH 原图像高度
+     * @return List<List<Point>>
+     */
+    public static List<List<Point>> restoreClip(List<List<Point>> boxes, float scale, int srcW, int srcH) {
+        // 防止 scale 无效（如 0 或负数）
+        float safeScale = scale <= 0 ? 1.0f : scale;
+
+        List<List<Point>> restored = new ArrayList<>();
+        for (List<Point> box : boxes) {
+            List<Point> one = new ArrayList<>(box.size());
+            for (Point p : box) {
+                // 坐标还原：除以缩放比例
+                double x = p.x / safeScale;
+                double y = p.y / safeScale;
+                // 边界裁剪，防止超出图像范围
+                one.add(new Point(
+                        Math.max(0, Math.min(x, srcW - 1)),
+                        Math.max(0, Math.min(y, srcH - 1))));
+            }
+            restored.add(one);
+        }
+        return restored;
     }
 
 }

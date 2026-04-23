@@ -314,8 +314,8 @@ public class DetProcessUpdate implements AutoCloseable {
             return;
         }
         File dir = new File(outputDir);
-        if (!dir.exists()) {
-            dir.mkdirs();
+        if (!dir.exists() && !dir.mkdirs()) {
+            throw new IllegalStateException("Failed to create output directory: " + dir.getAbsolutePath());
         }
 
         // 1) 保存输入图像

@@ -48,8 +48,8 @@ public class DetProcess implements AutoCloseable {
         // 创建中间图片保存目录
         if (config.isVisualize()) {
             File dir = new File(intermediateDir);
-            if (!dir.exists()) {
-                dir.mkdirs();
+            if (!dir.exists() && !dir.mkdirs()) {
+                throw new IllegalStateException("Failed to create intermediate directory: " + dir.getAbsolutePath());
             }
             log.info("中间图片保存目录: {}", intermediateDir);
         }
@@ -430,7 +430,7 @@ public class DetProcess implements AutoCloseable {
 
         Mat resized = new Mat();
         Imgproc.resize(context.getRawMat(), resized, new Size(context.getDetPrepWidth(), context.getDetPrepHeight()));
-        ImageUtil.saveDrawResult(ImageUtil.drawBoxes(resized, boxes),"src/main/java/resources/test/output/test1.jpg");
+        ImageUtil.saveImage(ImageUtil.drawBoxes(resized, boxes),"src/main/java/resources/test/output/test1.jpg");
 
 
         log.info("NMS前文本框数量: {}", boxes.size());
@@ -477,7 +477,7 @@ public class DetProcess implements AutoCloseable {
                     i, minX, maxX, minY, maxY, maxX - minX, maxY - minY);
         }
 
-        ImageUtil.saveDrawResult(ImageUtil.drawBoxes(resized, nmsBoxes),"src/main/java/resources/test/output/test2.jpg");
+        ImageUtil.saveImage(ImageUtil.drawBoxes(resized, nmsBoxes),"src/main/java/resources/test/output/test2.jpg");
         resized.release();
 
         // 6. 坐标还原
@@ -490,7 +490,7 @@ public class DetProcess implements AutoCloseable {
         List<List<Point>> restoredBoxes = DBPostProcess.restoreBoxes(nmsBoxes, scale);
 
         log.info("还原后文本框数量: {}", restoredBoxes.size());
-        ImageUtil.saveDrawResult(ImageUtil.drawBoxes(context.getRawMat(), restoredBoxes),"src/main/java/resources/test/output/test3.jpg");
+        ImageUtil.saveImage(ImageUtil.drawBoxes(context.getRawMat(), restoredBoxes),"src/main/java/resources/test/output/test3.jpg");
 
         // 打印还原后的坐标信息
         for (int i = 0; i < Math.min(restoredBoxes.size(), 5); i++) {

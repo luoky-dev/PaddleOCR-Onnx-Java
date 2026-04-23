@@ -1,14 +1,19 @@
 package com.ocr.paddleocr.process;
 
+import com.ocr.paddleocr.config.ModelConfig;
 import com.ocr.paddleocr.config.OCRConfig;
 
 public class ClsProcessor {
 
     private final ModelManager modelManager;
-    private final OCRConfig config;
+    private final OCRConfig ocrConfig;
+    private final ModelConfig modelConfig;
 
     public ClsProcessor(ModelManager modelManager) {
         this.modelManager = modelManager;
-        this.config = modelManager.getConfig();
+        this.ocrConfig = modelManager.getOcrConfig();
+        this.modelConfig = modelManager.getModelConfig();
     }
+
+
 }
