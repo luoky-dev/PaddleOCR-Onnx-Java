@@ -18,4 +18,10 @@ public class ModelConfig {
     private final int maxCandidates = 1000;
     // 官方 epsilon 值
     private final float epsilon = 0.002f;
+    // 方向分类模型输入宽度
+    private final int clsModelWith = 192;
+    // 方向分类模型输入高度
+    private final int clsModelHeight = 48;
+    // 方向四分类（支持垂直文本）
+    private final int[] fallbackAngleMap = {0, 90, 180, 270};
 }

@@ -117,8 +117,13 @@ public class OCRConfig implements Serializable {
 
     // ==================== 方向分类参数 ====================
 
+    // 分类检测阈值
     @Builder.Default
     private float clsThresh = 0.9f;
+    // 分类检测分批大小
+    @Builder.Default
+    private int clsBatchSize = 16;
+    // 是否启用分类检测模型
     @Builder.Default
     private boolean useAngleCls = true;
 

@@ -6,6 +6,7 @@ import ai.onnxruntime.OrtSession.Result;
 import com.ocr.paddleocr.config.ModelConfig;
 import com.ocr.paddleocr.config.OCRConfig;
 import com.ocr.paddleocr.domain.OCRContext;
+import com.ocr.paddleocr.domain.TextBox;
 import com.ocr.paddleocr.utils.OnnxUtil;
 import com.ocr.paddleocr.utils.OpenCVUtil;
 import org.opencv.core.*;
@@ -36,7 +37,7 @@ public class DetProcessor {
         parse(context);
         // 后处理
         postprocess(context);
-        // 计算检测时间
+        // 计算运行时间
         context.setDetProcessTime(System.currentTimeMillis() - startTime);
     }
 
@@ -75,9 +76,11 @@ public class DetProcessor {
         OnnxTensor input = OnnxUtil.createInputTensor(context.getDetPrepMat(), modelManager.getEnv());
         Result output = modelManager.getDetSession().run(Collections.singletonMap("x", input));
         // 模型解析
-        float[][] probMap = OnnxUtil.parseOutput(output);
+        float[][] probMap = OnnxUtil.parseDetOutput(output);
         // 保存结果
         context.setDetProbMap(probMap);
+        output.close();
+        input.close();
     }
 
     private void postprocess(OCRContext context) {
@@ -126,7 +129,7 @@ public class DetProcessor {
         }
 
         // 遍历每个轮廓，提取文本框
-        List<List<Point>> boxes = new ArrayList<>();
+        List<TextBox> boxes = new ArrayList<>();
         for (MatOfPoint contour : contours) {
             // 面积过滤, 面积太小，跳过
             double area = Imgproc.contourArea(contour);
@@ -158,11 +161,11 @@ public class DetProcessor {
             List<Point> approx = DBPostProcess.approxPolyDP(expanded, epsilon, true);
 
             // 根据配置选择返回多边形还是最小外接矩形
-            List<Point> box;
+            List<Point> contourPoint;
             MatOfPoint2f box2f;
             if (ocrConfig.isDetUsePolygon()) {
                 // 返回多边形（倾斜文本框）
-                box = approx;
+                contourPoint = approx;
             } else {
                 // 返回最小外接矩形（水平矩形）
                 if (approx.size() < 4) {
@@ -174,9 +177,9 @@ public class DetProcessor {
                 approx2f.release();
                 Point[] vertices = new Point[4];
                 rr.points(vertices);
-                box = OpenCVUtil.orderPoints(Arrays.asList(vertices));
+                contourPoint = OpenCVUtil.orderPoints(Arrays.asList(vertices));
             }
-            box2f = new MatOfPoint2f(box.toArray(new Point[0]));
+            box2f = new MatOfPoint2f(contourPoint.toArray(new Point[0]));
 
             // 最小尺寸过滤
             RotatedRect sizeRect = Imgproc.minAreaRect(box2f);
@@ -184,17 +187,23 @@ public class DetProcessor {
             expanded2f.release();
             if (Math.min(sizeRect.size.width, sizeRect.size.height) < ocrConfig.getDetMinSize()) continue;
 
+            // 坐标还原
+            List<Point> restorePoints = OpenCVUtil.restorePoints(
+                    contourPoint,
+                    context.getDetPrepScale(),
+                    context.getRawMat().width(),
+                    context.getRawMat().height());
+            // 透视变换裁剪
+            Mat restoreMat = OpenCVUtil.perspectiveTransformCrop(context.getRawMat(),restorePoints);
+
+            TextBox box = TextBox.builder()
+                    .contourPoint(contourPoint)
+                    .contourMat(contour)
+                    .restorePoints(restorePoints)
+                    .restoreMat(restoreMat)
+                    .build();
             boxes.add(box);
         }
-        context.setDetContourBoxes(boxes);
-
-        // 坐标还原并裁剪
-        List<List<Point>> restorePoints = OpenCVUtil.restoreClip(
-                boxes,
-                context.getDetPrepScale(),
-                context.getRawMat().width(),
-                context.getRawMat().height());
-
-        context.setDetPostBoxes(restorePoints);
+        context.setDetResultBoxes(boxes);
     }
 }

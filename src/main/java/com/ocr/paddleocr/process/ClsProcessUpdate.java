@@ -127,43 +127,7 @@ public class ClsProcessUpdate implements AutoCloseable {
         }
     }
 
-    /**
-     * 便捷入口：直接输入图像路径和检测框，执行 cls 并输出可视化结果。
-     * 检测框坐标应在原图坐标系内，每个框四点顺序可任意。
-     */
-    public ModelProcessContext classifyFromImage(String imagePath, List<List<Point>> boxes, String outputDir) {
-        Mat image = Imgcodecs.imread(imagePath);
-        if (image == null || image.empty()) {
-            throw new IllegalArgumentException("Cannot read image: " + imagePath);
-        }
-        if (boxes == null || boxes.isEmpty()) {
-            throw new IllegalArgumentException("boxes is empty");
-        }
 
-        ModelProcessContext context = new ModelProcessContext();
-        context.setRawMat(image);
-        context.setOriginalWidth(image.cols());
-        context.setOriginalHeight(image.rows());
-
-        List<TextBox> textBoxes = new ArrayList<>();
-        for (List<Point> boxPts : boxes) {
-            if (boxPts == null || boxPts.size() < 4) {
-                continue;
-            }
-            TextBox tb = new TextBox();
-            tb.setBoxPoint(boxPts);
-            Mat crop = cropByBoundingRect(image, boxPts);
-            tb.setRawMat(crop);
-            textBoxes.add(tb);
-        }
-        context.setBoxes(textBoxes);
-
-        classify(context);
-        if (context.isSuccess()) {
-            saveClsVisualizations(context, outputDir);
-        }
-        return context;
-    }
 
     /**
      * 官方 cls 预处理核心：
@@ -295,68 +259,6 @@ public class ClsProcessUpdate implements AutoCloseable {
         box.setRotate(true);
         box.setRotAngle(angle);
     }
-
-    private Mat cropByBoundingRect(Mat image, List<Point> points) {
-        double minX = points.stream().mapToDouble(p -> p.x).min().orElse(0);
-        double minY = points.stream().mapToDouble(p -> p.y).min().orElse(0);
-        double maxX = points.stream().mapToDouble(p -> p.x).max().orElse(0);
-        double maxY = points.stream().mapToDouble(p -> p.y).max().orElse(0);
-        int x1 = Math.max(0, (int) Math.floor(minX));
-        int y1 = Math.max(0, (int) Math.floor(minY));
-        int x2 = Math.min(image.cols() - 1, (int) Math.ceil(maxX));
-        int y2 = Math.min(image.rows() - 1, (int) Math.ceil(maxY));
-        int w = Math.max(1, x2 - x1 + 1);
-        int h = Math.max(1, y2 - y1 + 1);
-        return new Mat(image, new org.opencv.core.Rect(x1, y1, w, h)).clone();
-    }
-
-    private void saveClsVisualizations(ModelProcessContext context, String outputDir) {
-        if (outputDir == null || outputDir.trim().isEmpty()) {
-            return;
-        }
-        File dir = new File(outputDir);
-        if (!dir.exists() && !dir.mkdirs()) {
-            throw new IllegalStateException("Failed to create output directory: " + dir.getAbsolutePath());
-        }
-
-        // 1) 保存输入图
-        Imgcodecs.imwrite(new File(dir, "cls_input.jpg").getAbsolutePath(), context.getRawMat());
-
-        // 2) 保存分类结果可视化
-        Mat vis = context.getRawMat().clone();
-        Scalar boxColor = new Scalar(0, 255, 255);
-        Scalar textColor = new Scalar(0, 0, 255);
-        for (TextBox tb : context.getBoxes()) {
-            if (tb.getBoxPoint() == null || tb.getBoxPoint().size() < 4) {
-                continue;
-            }
-            org.opencv.core.MatOfPoint poly = new org.opencv.core.MatOfPoint();
-            poly.fromList(tb.getBoxPoint());
-            Imgproc.polylines(vis, Collections.singletonList(poly), true, boxColor, 2);
-            poly.release();
-
-            Point p = tb.getBoxPoint().get(0);
-            String label = "a=" + tb.getAngle() + ", s=" + String.format("%.2f", tb.getClsConfidence());
-            Imgproc.putText(vis, label, new Point(p.x, Math.max(0, p.y - 4)),
-                    Imgproc.FONT_HERSHEY_SIMPLEX, 0.5, textColor, 1);
-        }
-        Imgcodecs.imwrite(new File(dir, "cls_boxes.jpg").getAbsolutePath(), vis);
-        vis.release();
-
-        // 3) 保存每个框的旋转结果（若发生旋转）
-        int idx = 0;
-        for (TextBox tb : context.getBoxes()) {
-            Mat toSave = (tb.getRotMat() != null && !tb.getRotMat().empty()) ? tb.getRotMat() : tb.getRawMat();
-            if (toSave == null || toSave.empty()) {
-                continue;
-            }
-            String name = tb.isRotate() ? String.format("cls_crop_%03d_rot%d.jpg", idx, tb.getRotAngle())
-                    : String.format("cls_crop_%03d_raw.jpg", idx);
-            Imgcodecs.imwrite(new File(dir, name).getAbsolutePath(), toSave);
-            idx++;
-        }
-    }
-
     @Override
     public void close() throws OrtException {
         if (session != null) {

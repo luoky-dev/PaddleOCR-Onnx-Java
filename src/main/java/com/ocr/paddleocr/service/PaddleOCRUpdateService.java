@@ -156,7 +156,7 @@ public class PaddleOCRUpdateService implements Closeable {
             }
             try {
                 Mat crop = OpenCVUtil.perspectiveTransformCrop(raw, box.getBoxPoint());
-                if (crop != null && !crop.empty()) {
+                if (!crop.empty()) {
                     box.setRawMat(crop);
                 } else {
                     box.setRawMat(new Mat());

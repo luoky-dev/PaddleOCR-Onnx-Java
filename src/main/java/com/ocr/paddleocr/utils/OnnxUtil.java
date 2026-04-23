@@ -1,6 +1,7 @@
 package com.ocr.paddleocr.utils;
 
 import ai.onnxruntime.*;
+import ai.onnxruntime.OrtSession.Result;
 import ai.onnxruntime.OrtSession.SessionOptions;
 import com.ocr.paddleocr.config.OCRConfig;
 import org.opencv.core.Mat;
@@ -10,9 +11,6 @@ import java.util.List;
 
 public class OnnxUtil {
 
-    /**
-     * 创建单张输入Tensor
-     */
     /**
      * 创建单张输入Tensor
      * 注意：输入Mat必须是CHW格式，RGB通道顺序
@@ -39,6 +37,24 @@ public class OnnxUtil {
 
         long[] shape = {1, channels, height, width};
         return OnnxTensor.createTensor(env, FloatBuffer.wrap(chwData), shape);
+    }
+
+    /**
+     * 创建批量输入Tensor
+     */
+    public static OnnxTensor createBatchInputTensor(List<float[]> chwList,
+                                              OrtEnvironment env,
+                                              int channels,
+                                              int height,
+                                              int width) throws OrtException {
+        int batch = chwList.size();
+        float[] data = new float[batch * channels * height * width];
+        int one = channels * height * width;
+        for (int i = 0; i < batch; i++) {
+            System.arraycopy(chwList.get(i), 0, data, i * one, one);
+        }
+        long[] shape = {batch, channels, height, width};
+        return OnnxTensor.createTensor(env, FloatBuffer.wrap(data), shape);
     }
 
     /**
@@ -100,7 +116,10 @@ public class OnnxUtil {
         return env.createSession(modelPath, sessionOptions);
     }
 
-    public static float[][] parseOutput(OrtSession.Result output) throws OrtException {
+    /**
+     * 解析检测模型输出
+     */
+    public static float[][] parseDetOutput(Result output) throws OrtException {
         OnnxValue out = output.get(0);
         try {
             float[][][][] v4 = (float[][][][]) out.getValue();
@@ -113,5 +132,46 @@ public class OnnxUtil {
                 throw new OrtException("Unsupported det output shape");
             }
         }
+    }
+
+    /**
+     * 解析分类模型输出（角度分类）
+     * 模型输出形状：[batch, classes] 或 [batch, 1, classes]
+     */
+    public static float[][] parseClsOutput(Result output) throws OrtException {
+        OnnxValue v = output.get(0);
+        Object value = v.getValue();
+        if (value instanceof float[][]) {
+            return (float[][]) value;
+        }
+        if (value instanceof float[][][]) {
+            float[][][] v3 = (float[][][]) value;
+            float[][] result = new float[v3.length][];
+            for (int i = 0; i < v3.length; i++) {
+                result[i] = v3[i][0];
+            }
+            return result;
+        }
+        throw new OrtException("Unsupported cls output shape");
+    }
+
+    /**
+     * 解析 rec 输出为 [batch, time, classes]。
+     */
+    private float[][][] parseRecOutput(Result output) throws OrtException {
+        OnnxValue v = output.get(0);
+        Object value = v.getValue();
+        if (value instanceof float[][][]) {
+            return (float[][][]) value;
+        }
+        if (value instanceof float[][]) {
+            float[][] v2 = (float[][]) value;
+            return new float[][][]{v2};
+        }
+        if (value instanceof float[][][][]) {
+            float[][][][] v4 = (float[][][][]) value;
+            return v4[0];
+        }
+        throw new OrtException("Unsupported rec output shape");
     }
 }

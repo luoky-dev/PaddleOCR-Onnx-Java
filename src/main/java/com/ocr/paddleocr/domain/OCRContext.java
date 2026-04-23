@@ -5,7 +5,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.opencv.core.Mat;
-import org.opencv.core.Point;
 
 import java.util.List;
 
@@ -36,14 +35,9 @@ public class OCRContext {
     private float[][] detProbMap;
 
     /**
-     * 检测模型后处理过滤后轮廓检测框
+     * 检测模型处理结果检测框
      */
-    private List<List<Point>> detContourBoxes;
-
-    /**
-     * 检测模型后处理还原并裁剪后的检测框
-     */
-    private List<List<Point>> detPostBoxes;
+    private List<TextBox> detResultBoxes;
 
     /**
      * 检测模型处理时间（毫秒）
@@ -51,14 +45,34 @@ public class OCRContext {
     private long detProcessTime;
 
     /**
-     * 处理时间（毫秒）
+     * 分类检测分批处理检测框
      */
-    private long clsProcessTime;
+    private List<List<TextBox>> clsBatchBoxes;
+
+    /**
+     * 分类检测模型分批预处理后的模型输入数据
+     */
+    private List<List<float[]>> clsBatchChw;
+
+    /**
+     * 分类检测模型输出 logits 数组
+     */
+    private List<float[][]> clsLogitsList;
+
+    /**
+     * 分类检测模型处理结果检测框
+     */
+    private List<TextBox> clsResultBoxes;
 
     /**
      * 旋转归正的检测框个数
      */
     private int clsRotBox;
+
+    /**
+     * 分类检测处理时间（毫秒）
+     */
+    private long clsProcessTime;
 
     /**
      * 处理时间（毫秒）
@@ -75,8 +89,5 @@ public class OCRContext {
      */
     private String error;
 
-    /**
-     * 检测框处理结果
-     */
-    private List<TextBox> boxes;
+
 }

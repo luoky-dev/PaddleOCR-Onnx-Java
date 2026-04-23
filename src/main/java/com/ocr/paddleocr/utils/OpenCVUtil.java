@@ -202,30 +202,86 @@ public class OpenCVUtil {
     }
 
     /**
-     * 还原坐标并裁剪检测框
-     * @param boxes 还原前坐标
+     * 将图像缩放归一化到 [-1, 1], 并转换为 CHW 格式
+     *
+     * @param mat 原始文本图像
+     * @param imgH 模型要求的高度
+     * @param imgW 模型要求的宽度
+     * @return CHW格式的浮点数组 [3, imgH, imgW], 值范围 [-1, 1]
+     */
+    public static float[] resizeNormalize(Mat mat, int imgH, int imgW){
+
+        // 计算缩放后的宽度（保持高宽比）
+        int srcH = mat.rows();
+        int srcW = mat.cols();
+        // 计算宽高比
+        float ratio = srcH > 0 ? (float) srcW / (float) srcH : 1.0f;
+
+        // 计算缩放后的宽度, 高度固定为 imgH, 宽度按比例缩放
+        int resizedW = Math.min(imgW, Math.max(1, Math.round(imgH * ratio)));
+
+        // 缩放图像到, 保持文本不扭曲
+        Mat resized = new Mat();
+        Imgproc.resize(mat, resized, new Size(resizedW, imgH));
+
+        // 转换为 float32 类型, 并归一化到 [0, 1]
+        Mat floatMat = new Mat();
+        // 1.0/255.0 将像素值从 [0, 255] 映射到 [0, 1]
+        resized.convertTo(floatMat, CvType.CV_32FC3, 1.0 / 255.0);
+        resized.release();
+
+        // 转换为 HWC 格式数组
+        // HWC: Height x Width x Channel (高度 x 宽度 x 通道)
+        float[] hwc = new float[imgH * resizedW * 3];
+        floatMat.get(0, 0, hwc);
+        floatMat.release();
+
+        // 转换为 ONNX 模型要求的输入 CHW 格式, 并归一化到 [-1, 1]
+        // CHW: Channel x Height x Width (通道 x 高度 x 宽度)
+        float[] chw = new float[3 * imgH * imgW];
+
+        // 遍历：通道 → 高度 → 宽度
+        for (int c = 0; c < 3; c++) {
+            for (int h = 0; h < imgH; h++) {
+                for (int w = 0; w < imgW; w++) {
+                    // 计算CHW数组的索引
+                    int chwIdx = (c * imgH + h) * imgW + w;
+                    if (w < resizedW) {
+                        // 图像区域：转换 HWC → CHW
+                        // HWC索引: (行 × 宽度 + 列) × 3 + 通道
+                        int hwcIdx = (h * resizedW + w) * 3 + c;
+                        // 从 [0, 1] 归一化到 [-1, 1] 公式：output = (input - 0.5) / 0.5
+                        chw[chwIdx] = (hwc[hwcIdx] - 0.5f) / 0.5f;
+                    } else {
+                        // Padding区域填充 -1 对应像素值 0（全黑）
+                        chw[chwIdx] = -1.0f;
+                    }
+                }
+            }
+        }
+        return chw;
+    }
+
+    /**
+     * 还原坐标到原图坐标
+     * @param points 还原前坐标
      * @param scale 缩放比例
      * @param srcW 原图像宽度
      * @param srcH 原图像高度
-     * @return List<List<Point>>
+     * @return List<Point>
      */
-    public static List<List<Point>> restoreClip(List<List<Point>> boxes, float scale, int srcW, int srcH) {
+    public static List<Point> restorePoints(List<Point> points, float scale, int srcW, int srcH) {
         // 防止 scale 无效（如 0 或负数）
         float safeScale = scale <= 0 ? 1.0f : scale;
-
-        List<List<Point>> restored = new ArrayList<>();
-        for (List<Point> box : boxes) {
-            List<Point> one = new ArrayList<>(box.size());
-            for (Point p : box) {
-                // 坐标还原：除以缩放比例
-                double x = p.x / safeScale;
-                double y = p.y / safeScale;
-                // 边界裁剪，防止超出图像范围
-                one.add(new Point(
-                        Math.max(0, Math.min(x, srcW - 1)),
-                        Math.max(0, Math.min(y, srcH - 1))));
-            }
-            restored.add(one);
+        List<Point> restored = new ArrayList<>();
+        for (Point p : points) {
+            // 坐标还原：除以缩放比例
+            double x = p.x / safeScale;
+            double y = p.y / safeScale;
+            // 边界裁剪，防止超出图像范围
+            restored.add(new Point(
+                    Math.max(0, Math.min(x, srcW - 1)),
+                    Math.max(0, Math.min(y, srcH - 1))));
         }
         return restored;
     }
