@@ -17,11 +17,6 @@ import java.util.List;
 public class TextBox {
 
     /**
-     * 文本框图像信息
-     */
-    private Mat rawMat;
-
-    /**
      * 坐标还原前轮廓图像信息
      */
     private MatOfPoint contourMat;
@@ -47,11 +42,6 @@ public class TextBox {
     private Mat rotMat;
 
     /**
-     * 检测框四个顶点
-     */
-    private List<Point> boxPoint;
-
-    /**
      * 原检测框方向角度
      */
     private int angle;
@@ -62,27 +52,22 @@ public class TextBox {
     private float clsConfidence;
 
     /**
-     * 文本识别置信度
-     */
-    private float recConfidence;
-
-    /**
      * 是否旋转
      */
     private boolean isRotate;
 
     /**
-     * 旋转后的角度
+     * 旋转的角度
      */
     private int rotAngle;
 
     /**
-     * 方向分类旋转后的角度
-     */
-    private int clsAngle;
-
-    /**
      * 识别的文本内容
      */
-    private String text;
+    private String recText;
+
+    /**
+     * 文本识别置信度
+     */
+    private float recConfidence;
 }

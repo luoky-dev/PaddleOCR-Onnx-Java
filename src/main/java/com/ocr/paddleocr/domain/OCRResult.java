@@ -54,5 +54,5 @@ public class OCRResult implements Serializable {
     /**
      * 预测结果列表
      */
-    private List<OCRPrediction> predictions;
+    private List<Word> words;
 }

@@ -136,8 +136,8 @@ public class DetProcessor {
             if (area <= 1.0) continue;
 
             // 计算轮廓区域内概率图的平均置信度并过滤
-            double score = DBPostProcess.getScore(contour, context.getDetProbMap());
-            if (score < ocrConfig.getBoxThresh()) continue;
+            double score = OpenCVUtil.getScore(contour, context.getDetProbMap());
+            if (score < ocrConfig.getDetBoxThresh()) continue;
 
             // 获取轮廓点并计算周长
             Point[] contourPoints = contour.toArray();
@@ -150,7 +150,7 @@ public class DetProcessor {
 
             // unclip 扩张公式 距离 = 面积 * 扩张比率 / 周长
             double distance = area * ocrConfig.getDetUnclipRatio() / perimeter;
-            List<Point> expanded = DBPostProcess.unclipPolygon(contourPoints, distance);
+            List<Point> expanded = OpenCVUtil.unclipPolygon(contourPoints, distance);
             contour2f.release();
             // 扩张后点数不足，跳过
             if (expanded.size() < 4) continue;
@@ -158,7 +158,7 @@ public class DetProcessor {
             // 多边形近似（平滑轮廓）
             MatOfPoint2f expanded2f = new MatOfPoint2f(expanded.toArray(new Point[0]));
             double epsilon = modelConfig.getEpsilon() * Imgproc.arcLength(expanded2f, true);
-            List<Point> approx = DBPostProcess.approxPolyDP(expanded, epsilon, true);
+            List<Point> approx = OpenCVUtil.approxPolyDP(expanded, epsilon, true);
 
             // 根据配置选择返回多边形还是最小外接矩形
             List<Point> contourPoint;

@@ -5,11 +5,10 @@ import org.opencv.core.*;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Base64;
 
 @Slf4j
 public class ImageUtil {
@@ -251,5 +250,22 @@ public class ImageUtil {
             throw new IllegalArgumentException("Unable to read image");
         }
         return image;
+    }
+
+    public static List<String> readDictionary(String dictPath) {
+        List<String> dictionary = new ArrayList<>();
+        try (BufferedReader br = new BufferedReader(
+                new InputStreamReader(new FileInputStream(dictPath), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                line = line.trim();
+                if (!line.isEmpty()) {
+                    dictionary.add(line);
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to read dictionary: " + dictPath, e);
+        }
+        return dictionary;
     }
 }

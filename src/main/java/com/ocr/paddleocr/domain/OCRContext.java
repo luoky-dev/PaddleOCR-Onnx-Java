@@ -65,17 +65,32 @@ public class OCRContext {
     private List<TextBox> clsResultBoxes;
 
     /**
-     * 旋转归正的检测框个数
-     */
-    private int clsRotBox;
-
-    /**
      * 分类检测处理时间（毫秒）
      */
     private long clsProcessTime;
 
     /**
-     * 处理时间（毫秒）
+     * 识别模型分批处理检测框
+     */
+    private List<List<TextBox>> recBatchBoxes;
+
+    /**
+     * 识别模型分批预处理后的模型输入数据
+     */
+    private List<List<float[]>> recBatchChw;
+
+    /**
+     * 识别模型输出 probs 数组
+     */
+    private List<float[][][]> recProbsList;
+
+    /**
+     * 识别模型处理结果检测框
+     */
+    private List<TextBox> recResultBoxes;
+
+    /**
+     * 识别模型处理时间（毫秒）
      */
     private long recProcessTime;
 
@@ -88,6 +103,5 @@ public class OCRContext {
      * 错误信息
      */
     private String error;
-
 
 }

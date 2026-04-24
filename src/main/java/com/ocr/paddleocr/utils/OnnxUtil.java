@@ -2,8 +2,6 @@ package com.ocr.paddleocr.utils;
 
 import ai.onnxruntime.*;
 import ai.onnxruntime.OrtSession.Result;
-import ai.onnxruntime.OrtSession.SessionOptions;
-import com.ocr.paddleocr.config.OCRConfig;
 import org.opencv.core.Mat;
 
 import java.nio.FloatBuffer;
@@ -58,65 +56,6 @@ public class OnnxUtil {
     }
 
     /**
-     * 创建批量输入Tensor
-     */
-    public static OnnxTensor createBatchInputTensor(List<Mat> images, OrtEnvironment env) throws OrtException {
-        if (images.isEmpty()) {
-            throw new IllegalArgumentException("Image list is empty");
-        }
-
-        int batchSize = images.size();
-        int channels = images.get(0).channels();
-        int height = images.get(0).rows();
-        int width = images.get(0).cols();
-
-        // 验证所有图像尺寸一致
-        for (Mat img : images) {
-            if (img.rows() != height || img.cols() != width) {
-                throw new IllegalArgumentException("All images must have same dimensions");
-            }
-            if (img.channels() != channels) {
-                throw new IllegalArgumentException("All images must have same number of channels");
-            }
-        }
-
-        float[] batchData = new float[batchSize * channels * height * width];
-
-        for (int b = 0; b < batchSize; b++) {
-            Mat image = images.get(b);
-            float[] imageData = new float[channels * height * width];
-            image.get(0, 0, imageData);
-
-            for (int c = 0; c < channels; c++) {
-                for (int h = 0; h < height; h++) {
-                    for (int w = 0; w < width; w++) {
-                        int chwIndex = (c * height + h) * width + w;
-                        int hwcIndex = (h * width + w) * channels + c;
-                        int batchIndex = b * channels * height * width + chwIndex;
-                        batchData[batchIndex] = imageData[hwcIndex];
-                    }
-                }
-            }
-        }
-
-        long[] shape = {batchSize, channels, height, width};
-        return OnnxTensor.createTensor(env, FloatBuffer.wrap(batchData), shape);
-    }
-
-    public static OrtSession getSession(String modelPath, OrtEnvironment env, OCRConfig config) throws OrtException {
-        SessionOptions sessionOptions = new SessionOptions();
-        // GPU配置
-        if (config.isUseGpu()) {
-            sessionOptions.addCUDA(config.getGpuId());
-        }
-        // CPU线程数配置
-        sessionOptions.setIntraOpNumThreads(config.getNumThreads());
-        // 设置执行模式
-        sessionOptions.setExecutionMode(SessionOptions.ExecutionMode.SEQUENTIAL);
-        return env.createSession(modelPath, sessionOptions);
-    }
-
-    /**
      * 解析检测模型输出
      */
     public static float[][] parseDetOutput(Result output) throws OrtException {
@@ -156,9 +95,9 @@ public class OnnxUtil {
     }
 
     /**
-     * 解析 rec 输出为 [batch, time, classes]。
+     * 解析 rec 输出为 [batch_size, time_steps, num_classes]
      */
-    private float[][][] parseRecOutput(Result output) throws OrtException {
+    public static float[][][] parseRecOutput(Result output) throws OrtException {
         OnnxValue v = output.get(0);
         Object value = v.getValue();
         if (value instanceof float[][][]) {

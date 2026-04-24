@@ -105,14 +105,14 @@ public class ModelManager implements AutoCloseable {
         sessionOptions.setIntraOpNumThreads(ocrConfig.getNumThreads());
 
         // 加载检测模型
-        if (ocrConfig.isUseDet() && ocrConfig.getDetModelPath() != null) {
+        if (ocrConfig.getDetModelPath() != null) {
             log.info("加载检测模型: {}", ocrConfig.getDetModelPath());
             this.detSession = env.createSession(ocrConfig.getDetModelPath(), sessionOptions);
             log.info("检测模型加载完成");
         }
 
         // 加载识别模型
-        if (ocrConfig.isUseRec() && ocrConfig.getRecModelPath() != null) {
+        if (ocrConfig.getRecModelPath() != null) {
             log.info("加载识别模型: {}", ocrConfig.getRecModelPath());
             this.recSession = env.createSession(ocrConfig.getRecModelPath(), sessionOptions);
             log.info("识别模型加载完成");

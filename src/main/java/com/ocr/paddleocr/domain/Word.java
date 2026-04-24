@@ -9,7 +9,7 @@ import java.util.List;
 
 @Data
 @Builder
-public class OCRPrediction implements Serializable {
+public class Word implements Serializable {
 
     private static final long serialVersionUID = 1L;
 

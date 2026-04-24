@@ -14,46 +14,6 @@ import java.util.List;
 public class OpenCVUtil {
 
     /**
-     * 获取边界矩形
-     *
-     * @param points 四个顶点坐标
-     * @return Rect 矩形
-     */
-    public static Rect getBoundingRect(List<Point> points) {
-        if (points == null || points.isEmpty()) {
-            return new Rect(0, 0, 0, 0);
-        }
-        double minX = points.stream().mapToDouble(p -> p.x).min().orElse(0);
-        double minY = points.stream().mapToDouble(p -> p.y).min().orElse(0);
-        double maxX = points.stream().mapToDouble(p -> p.x).max().orElse(0);
-        double maxY = points.stream().mapToDouble(p -> p.y).max().orElse(0);
-        return new Rect((int) minX, (int) minY,
-                (int) (maxX - minX), (int) (maxY - minY));
-    }
-
-    /**
-     * 计算两个矩形的IoU（交并比）
-     *
-     * @param a 矩形A
-     * @param b 矩形B
-     * @return IoU值 (0-1)
-     */
-    public static float computeIoU(Rect a, Rect b) {
-        int x1 = Math.max(a.x, b.x);
-        int y1 = Math.max(a.y, b.y);
-        int x2 = Math.min(a.x + a.width, b.x + b.width);
-        int y2 = Math.min(a.y + a.height, b.y + b.height);
-        if (x2 <= x1 || y2 <= y1) {
-            return 0;
-        }
-        int interArea = (x2 - x1) * (y2 - y1);
-        int areaA = a.width * a.height;
-        int areaB = b.width * b.height;
-        int unionArea = areaA + areaB - interArea;
-        return (float) interArea / unionArea;
-    }
-
-    /**
      * 透视变换裁剪
      *
      * @param image 原始图像
@@ -97,27 +57,6 @@ public class OpenCVUtil {
         dstMat.release();
         transform.release();
         return result;
-    }
-
-    /**
-     * 矩形裁剪
-     *
-     * @param image 原始图像
-     * @param box 文本框四点坐标
-     * @return 裁剪后的图像
-     */
-    public static Mat rectangleCrop(Mat image, List<Point> box) {
-        // 计算最小外接矩形
-        Rect boundingRect = Imgproc.boundingRect(new MatOfPoint(box.toArray(new Point[0])));
-        // 边界检查
-        boundingRect.x = Math.max(0, boundingRect.x);
-        boundingRect.y = Math.max(0, boundingRect.y);
-        boundingRect.width = Math.min(boundingRect.width, image.cols() - boundingRect.x);
-        boundingRect.height = Math.min(boundingRect.height, image.rows() - boundingRect.y);
-        if (boundingRect.width <= 0 || boundingRect.height <= 0) {
-            return null;
-        }
-        return new Mat(image, boundingRect);
     }
 
     /**
@@ -284,6 +223,145 @@ public class OpenCVUtil {
                     Math.max(0, Math.min(y, srcH - 1))));
         }
         return restored;
+    }
+
+    /**
+     * 计算轮廓内平均置信度
+     *
+     * @param contour 轮廓
+     * @param probMap 概率图
+     * @return 平均置信度
+     */
+    public static double getScore(MatOfPoint contour, float[][] probMap) {
+        Point[] points = contour.toArray();
+        if (points.length < 3) {
+            return 0.0;
+        }
+
+        int height = probMap.length;
+        int width = probMap[0].length;
+
+        // 创建掩码
+        Mat mask = new Mat(height, width, CvType.CV_8UC1, new Scalar(0));
+        MatOfPoint matOfPoint = new MatOfPoint(points);
+        Imgproc.fillPoly(mask, java.util.Collections.singletonList(matOfPoint), new Scalar(255));
+        matOfPoint.release();
+
+        // 计算轮廓内像素的平均概率
+        double sum = 0;
+        int count = 0;
+        for (int i = 0; i < height; i++) {
+            for (int j = 0; j < width; j++) {
+                if (mask.get(i, j)[0] > 0) {
+                    sum += probMap[i][j];
+                    count++;
+                }
+            }
+        }
+
+        mask.release();
+        return count > 0 ? sum / count : 0.0;
+    }
+
+    /**
+     * 多边形扩张算法
+     *
+     * @param polygon 原始多边形顶点
+     * @param distance 扩张距离
+     * @return 扩张后的多边形顶点
+     */
+    public static List<Point> unclipPolygon(Point[] polygon, double distance) {
+        if (polygon == null || polygon.length < 3) {
+            return new ArrayList<>();
+        }
+
+        if (Math.abs(distance) < 1e-6) {
+            List<Point> result = new ArrayList<>();
+            for (Point p : polygon) {
+                result.add(p.clone());
+            }
+            return result;
+        }
+
+        int n = polygon.length;
+
+        // 1. 计算每条边的外扩向量
+        List<double[]> moveVecs = new ArrayList<>();
+
+        for (int i = 0; i < n; i++) {
+            Point p1 = polygon[i];
+            Point p2 = polygon[(i + 1) % n];
+
+            // 计算边的方向向量
+            double dx = p2.x - p1.x;
+            double dy = p2.y - p1.y;
+            double length = Math.hypot(dx, dy);
+
+            if (length < 1e-6) {
+                moveVecs.add(new double[]{0, 0});
+                continue;
+            }
+
+            // 单位方向向量
+            double ux = dx / length;
+            double uy = dy / length;
+
+            // 垂直向量（向外）
+            double vx = -uy;
+            double vy = ux;
+
+            // 扩张向量
+            moveVecs.add(new double[]{vx * distance, vy * distance});
+        }
+
+        // 2. 计算新顶点位置
+        List<Point> expanded = new ArrayList<>();
+
+        for (int i = 0; i < n; i++) {
+            double[] move1 = moveVecs.get(i);
+            double[] move2 = moveVecs.get((i + 1) % n);
+
+            Point p = polygon[(i + 1) % n];
+
+            // 两条边的扩张向量之和
+            double newX = p.x + move1[0] + move2[0];
+            double newY = p.y + move1[1] + move2[1];
+
+            expanded.add(new Point(newX, newY));
+        }
+
+        return expanded;
+    }
+
+    /**
+     * 多边形近似算法
+     *
+     * @param points 原始点集
+     * @param epsilon 近似精度
+     * @param closed 是否闭合
+     * @return 近似后的点集
+     */
+    public static List<Point> approxPolyDP(List<Point> points, double epsilon, boolean closed) {
+        if (points == null || points.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        MatOfPoint2f mat = new MatOfPoint2f();
+        mat.fromList(points);
+
+        MatOfPoint2f approx = new MatOfPoint2f();
+        Imgproc.approxPolyDP(mat, approx, epsilon, closed);
+
+        List<Point> result = new ArrayList<>();
+        for (int i = 0; i < approx.total(); i++) {
+            double[] point = approx.get(i, 0);
+            result.add(new Point(point[0], point[1]));
+        }
+
+        mat.release();
+        approx.release();
+
+        return result;
     }
 
 }
