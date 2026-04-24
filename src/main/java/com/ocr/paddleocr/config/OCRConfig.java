@@ -20,11 +20,11 @@ public class OCRConfig implements Serializable {
     @Builder.Default
     private String detModelPath = "src/main/java/resources/models/chi/det_model.onnx";
     @Builder.Default
-    private String clsModelPath = "src/main/java/resources/models/latin/cls_model.onnx";
+    private String clsModelPath = "src/main/java/resources/models/chi/cls_model.onnx";
     @Builder.Default
-    private String recModelPath = "src/main/java/resources/models/latin/rec_model.onnx";
+    private String recModelPath = "src/main/java/resources/models/chi/rec_model.onnx";
     @Builder.Default
-    private String dictPath = "src/main/java/resources/models/latin/latin_dict.txt";
+    private String dictPath = "src/main/java/resources/models/chi/ppocr_keys_v1.txt";
     @Builder.Default
     private String debugPath = "src/main/java/resources/test/output";
     // 是否启用分类检测模型
@@ -67,7 +67,7 @@ public class OCRConfig implements Serializable {
     private float clsThresh = 0.9f;
     // 检测框分批处理大小
     @Builder.Default
-    private int batchSize = 16;
+    private int batchSize = 64;
 
     // ==================== 系统参数 ====================
 
@@ -79,10 +79,5 @@ public class OCRConfig implements Serializable {
     private int numThreads = 4;
     @Builder.Default
     private boolean enableMKLDNN = false;
-
-    // ==================== 语言配置 ====================
-
-    @Builder.Default
-    private String lang = "chi";
 
 }

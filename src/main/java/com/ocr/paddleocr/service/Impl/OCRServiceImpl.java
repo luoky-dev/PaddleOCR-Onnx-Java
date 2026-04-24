@@ -130,16 +130,16 @@ public class OCRServiceImpl {
             }
             // 检测框识别
             recProcessor.recognize(context);
-//            if (ocrConfig.isUseDebug()) {
-//                DebugProcessor.printBoxes(context,ocrConfig.getDebugPath());
-//            }
+            if (ocrConfig.isUseDebug()) {
+                DebugProcessor.printBoxes(context,ocrConfig.getDebugPath());
+            }
             rawImage.release();
             // 检测结果
             List<Word> words = new ArrayList<>();
             context.getRecResultBoxes().forEach(textBox -> words.add(Word.builder()
                     .text(textBox.getRecText())
                     .confidence(textBox.getRecConfidence())
-//                    .box(textBox.getRestorePoints())
+                    .box(textBox.getRestorePoints())
                     .build()));
             return builder
                     .success(Boolean.TRUE)

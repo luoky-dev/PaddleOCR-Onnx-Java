@@ -16,7 +16,6 @@ import org.opencv.core.Mat;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 
 @Slf4j
 public class RecProcessor {
@@ -25,20 +24,12 @@ public class RecProcessor {
     private final OCRConfig ocrConfig;
     private final ModelConfig modelConfig;
     private final List<String> dict;
-//    private final boolean keepSpaceChar;
-//
-//    // Auto-resolved mapping mode: -1 means dictIdx = classIdx - 1; 0 means dictIdx = classIdx
-//    private Integer cachedDictIndexOffset;
-//    private boolean decodeModeLogged;
 
     public RecProcessor(ModelManager modelManager) {
         this.modelManager = modelManager;
         this.ocrConfig = modelManager.getOcrConfig();
         this.modelConfig = modelManager.getModelConfig();
         this.dict = ImageUtil.readDictionary(ocrConfig.getDictPath());
-//        this.keepSpaceChar = isKeepSpaceChar();
-//        this.cachedDictIndexOffset = null;
-//        this.decodeModeLogged = false;
     }
 
     public void recognize(OCRContext context) throws OrtException {
@@ -126,8 +117,16 @@ public class RecProcessor {
             return;
         }
 
-//        int numClasses = timeSteps[0].length;
-//        int dictIndexOffset = resolveDictIndexOffset(numClasses);
+        int offset;
+        if (timeSteps[0].length == dict.size() + 1) {
+            offset = -1;
+        } else if (timeSteps[0].length == dict.size()) {
+            offset = 0;
+        } else if (timeSteps[0].length > dict.size() + 1) {
+            offset = -1;
+        } else {
+            offset = 0;
+        }
 
         StringBuilder sb = new StringBuilder();
         float confSum = 0.0f;
@@ -149,21 +148,16 @@ public class RecProcessor {
             }
             prev = bestIdx;
 
-//            if (dictIndexOffset == -1 && bestIdx == modelConfig.getBlankIndex()) {
-//                continue;
-//            }
-//
-//            int dictIdx = bestIdx + dictIndexOffset;
-//            if (dictIdx < 0 || dictIdx >= dict.size()) {
-//                continue;
-//            }
-//
-//            String token = dict.get(dictIdx);
-//            if (shouldIgnoreToken(token)) {
-//                continue;
-//            }
+            if (offset == -1 && bestIdx == modelConfig.getBlankIndex()) {
+                continue;
+            }
 
-//            sb.append(token);
+            int dictIdx = bestIdx + offset;
+            if (dictIdx < 0 || dictIdx >= dict.size()) {
+                continue;
+            }
+            String token = dict.get(dictIdx);
+            sb.append(token);
             confSum += bestProb;
             confCount++;
         }
@@ -172,50 +166,4 @@ public class RecProcessor {
         box.setRecConfidence(confCount > 0 ? (confSum / confCount) : 0.0f);
     }
 
-//    private int resolveDictIndexOffset(int numClasses) {
-//        if (cachedDictIndexOffset != null) {
-//            return cachedDictIndexOffset;
-//        }
-//
-//        int offset;
-//        if (numClasses == dict.size() + 1) {
-//            offset = -1;
-//        } else if (numClasses == dict.size()) {
-//            offset = 0;
-//        } else if (numClasses > dict.size() + 1) {
-//            offset = -1;
-//        } else {
-//            offset = 0;
-//        }
-//
-//        cachedDictIndexOffset = offset;
-//        if (!decodeModeLogged) {
-//            log.info("Rec decode mode resolved: dictIndexOffset={} (numClasses={}, dictSize={})",
-//                    offset, numClasses, dict.size());
-//            decodeModeLogged = true;
-//        }
-//        return offset;
-//    }
-//
-//    private boolean shouldIgnoreToken(String token) {
-//        if (token == null) {
-//            return true;
-//        }
-//        if (!keepSpaceChar && " ".equals(token)) {
-//            return true;
-//        }
-//        String normalized = token.trim().toLowerCase(Locale.ROOT);
-//        return normalized.isEmpty()
-//                || "blank".equals(normalized)
-//                || "<blank>".equals(normalized)
-//                || "[blank]".equals(normalized);
-//    }
-//
-//    private boolean isKeepSpaceChar() {
-//        return !"ch".equals(ocrConfig.getLang())
-//                && !"chi".equals(ocrConfig.getLang())
-//                && !"japan".equals(ocrConfig.getLang())
-//                && !"korean".equals(ocrConfig.getLang());
-//    }
-//
 }

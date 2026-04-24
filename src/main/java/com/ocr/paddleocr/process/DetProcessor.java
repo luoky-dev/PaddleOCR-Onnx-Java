@@ -9,7 +9,6 @@ import com.ocr.paddleocr.domain.OCRContext;
 import com.ocr.paddleocr.domain.TextBox;
 import com.ocr.paddleocr.utils.OnnxUtil;
 import com.ocr.paddleocr.utils.OpenCVUtil;
-import lombok.extern.slf4j.Slf4j;
 import org.opencv.core.*;
 import org.opencv.imgproc.Imgproc;
 
