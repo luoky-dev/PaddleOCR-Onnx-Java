@@ -1,17 +1,66 @@
 package com.ocr.paddleocr.utils;
 
-import ai.onnxruntime.*;
+import ai.onnxruntime.NodeInfo;
+import ai.onnxruntime.OnnxTensor;
+import ai.onnxruntime.OnnxValue;
+import ai.onnxruntime.OrtEnvironment;
+import ai.onnxruntime.OrtException;
+import ai.onnxruntime.OrtSession;
 import ai.onnxruntime.OrtSession.Result;
+import ai.onnxruntime.TensorInfo;
 import org.opencv.core.Mat;
 
 import java.nio.FloatBuffer;
 import java.util.List;
+import java.util.Map;
 
 public class OnnxUtil {
 
     /**
-     * 创建单张输入Tensor
-     * 注意：输入Mat必须是CHW格式，RGB通道顺序
+     * 判断模型输入是否为动态 shape
+     * true: dynamic input; false: fixed input.
+     */
+    public static Boolean isDynamicInput(OrtSession session) {
+        try {
+            long[] shape = getInputShape(session);
+            if (shape.length != 4) {
+                return true;
+            }
+            return shape[1] <= 0 || shape[2] <= 0 || shape[3] <= 0;
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    /**
+     * 返回模型输入 shape
+     * 动态维度一般为 <= 0（如 -1）。
+     */
+    public static long[] getInputShape(OrtSession session) throws OrtException {
+        Map<String, NodeInfo> inputInfo = session.getInputInfo();
+        if (inputInfo == null || inputInfo.isEmpty()) {
+            throw new OrtException("Model has no input info");
+        }
+
+        NodeInfo nodeInfo = inputInfo.get("x");
+        if (nodeInfo == null) {
+            Map.Entry<String, NodeInfo> first = inputInfo.entrySet().iterator().next();
+            nodeInfo = first.getValue();
+        }
+
+        if (!(nodeInfo.getInfo() instanceof TensorInfo)) {
+            throw new OrtException("Input info is not TensorInfo");
+        }
+
+        long[] shape = ((TensorInfo) nodeInfo.getInfo()).getShape();
+        if (shape == null || shape.length != 4) {
+            throw new OrtException("Input shape is invalid");
+        }
+        return shape;
+    }
+
+    /**
+     * 创建单张输入 Tensor。
      */
     public static OnnxTensor createInputTensor(Mat image, OrtEnvironment env) throws OrtException {
         int height = image.rows();
@@ -38,13 +87,13 @@ public class OnnxUtil {
     }
 
     /**
-     * 创建批量输入Tensor
+     * 创建批量输入 Tensor。
      */
     public static OnnxTensor createBatchInputTensor(List<float[]> chwList,
-                                              OrtEnvironment env,
-                                              int channels,
-                                              int height,
-                                              int width) throws OrtException {
+                                                    OrtEnvironment env,
+                                                    int channels,
+                                                    int height,
+                                                    int width) throws OrtException {
         int batch = chwList.size();
         float[] data = new float[batch * channels * height * width];
         int one = channels * height * width;

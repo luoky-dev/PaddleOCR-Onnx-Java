@@ -10,24 +10,35 @@ import com.ocr.paddleocr.domain.TextBox;
 import com.ocr.paddleocr.utils.ImageUtil;
 import com.ocr.paddleocr.utils.OnnxUtil;
 import com.ocr.paddleocr.utils.OpenCVUtil;
+import lombok.extern.slf4j.Slf4j;
 import org.opencv.core.Mat;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
 
+@Slf4j
 public class RecProcessor {
 
     private final ModelManager modelManager;
     private final OCRConfig ocrConfig;
     private final ModelConfig modelConfig;
     private final List<String> dict;
-    private final Set<Integer> ignoredTokens;
+//    private final boolean keepSpaceChar;
+//
+//    // Auto-resolved mapping mode: -1 means dictIdx = classIdx - 1; 0 means dictIdx = classIdx
+//    private Integer cachedDictIndexOffset;
+//    private boolean decodeModeLogged;
 
     public RecProcessor(ModelManager modelManager) {
         this.modelManager = modelManager;
         this.ocrConfig = modelManager.getOcrConfig();
         this.modelConfig = modelManager.getModelConfig();
         this.dict = ImageUtil.readDictionary(ocrConfig.getDictPath());
-        this.ignoredTokens = initIgnoredTokens(dict);
+//        this.keepSpaceChar = isKeepSpaceChar();
+//        this.cachedDictIndexOffset = null;
+//        this.decodeModeLogged = false;
     }
 
     public void recognize(OCRContext context) throws OrtException {
@@ -45,13 +56,8 @@ public class RecProcessor {
     private void preprocess(OCRContext context) {
         List<List<TextBox>> recBatchBoxes = new ArrayList<>();
         List<List<float[]>> recBatchChw = new ArrayList<>();
-        List<TextBox> resultBoxes;
-        if(ocrConfig.isUseCls()) {
-            resultBoxes = context.getClsResultBoxes();
-        } else {
-            resultBoxes = context.getDetResultBoxes();
-        }
-        // 按批量处理数量分组
+        List<TextBox> resultBoxes = ocrConfig.isUseCls() ? context.getClsResultBoxes() : context.getDetResultBoxes();
+
         for (int begin = 0; begin < resultBoxes.size(); begin += ocrConfig.getBatchSize()) {
             int end = Math.min(begin + ocrConfig.getBatchSize(), resultBoxes.size());
             List<TextBox> batch = resultBoxes.subList(begin, end);
@@ -77,8 +83,13 @@ public class RecProcessor {
     private void parse(OCRContext context) throws OrtException {
         List<float[][][]> recProbsList = new ArrayList<>();
         for (List<float[]> chwList : context.getRecBatchChw()) {
-            // 模型输出
-            OnnxTensor input = OnnxUtil.createBatchInputTensor(chwList, modelManager.getEnv(), 3, modelConfig.getRecModelHeight(), modelConfig.getRecModelWith());
+            OnnxTensor input = OnnxUtil.createBatchInputTensor(
+                    chwList,
+                    modelManager.getEnv(),
+                    3,
+                    modelConfig.getRecModelHeight(),
+                    modelConfig.getRecModelWith()
+            );
             OrtSession.Result output = modelManager.getRecSession().run(Collections.singletonMap("x", input));
             // 模型解析
             float[][][] probs = OnnxUtil.parseRecOutput(output);
@@ -98,7 +109,7 @@ public class RecProcessor {
             // 当前批次的模型输出
             float[][][] probs = context.getRecProbsList().get(i);
             // 遍历批次内的每个文本框
-            for (int j = 0; j < context.getRecBatchBoxes().get(i).size(); j++) {
+            for (int j = 0; j < batchBox.size(); j++) {
                 // 当前文本框
                 TextBox box = batchBox.get(j);
                 ctcDecode(box, probs[j]);
@@ -115,12 +126,14 @@ public class RecProcessor {
             return;
         }
 
+//        int numClasses = timeSteps[0].length;
+//        int dictIndexOffset = resolveDictIndexOffset(numClasses);
+
         StringBuilder sb = new StringBuilder();
         float confSum = 0.0f;
         int confCount = 0;
-        int prev = modelConfig.getBlankIndex();
+        int prev = -1;
 
-        // 官方思路：按时间步做 greedy 取最大，再做 CTC 去重与去 blank。
         for (float[] step : timeSteps) {
             int bestIdx = 0;
             float bestProb = step[0];
@@ -136,51 +149,73 @@ public class RecProcessor {
             }
             prev = bestIdx;
 
-            if (ignoredTokens.contains(bestIdx)) {
-                continue;
-            }
+//            if (dictIndexOffset == -1 && bestIdx == modelConfig.getBlankIndex()) {
+//                continue;
+//            }
+//
+//            int dictIdx = bestIdx + dictIndexOffset;
+//            if (dictIdx < 0 || dictIdx >= dict.size()) {
+//                continue;
+//            }
+//
+//            String token = dict.get(dictIdx);
+//            if (shouldIgnoreToken(token)) {
+//                continue;
+//            }
 
-            int dictIdx = bestIdx - 1; // 0 is blank
-            if (dictIdx >= 0 && dictIdx < dict.size()) {
-                sb.append(dict.get(dictIdx));
-                confSum += bestProb;
-                confCount++;
-            }
+//            sb.append(token);
+            confSum += bestProb;
+            confCount++;
         }
 
-        String text = sb.toString().trim();
-        float conf = confCount > 0 ? (confSum / confCount) : 0.0f;
-        box.setRecText(text);
-        box.setRecConfidence(conf);
+        box.setRecText(sb.toString().trim());
+        box.setRecConfidence(confCount > 0 ? (confSum / confCount) : 0.0f);
     }
 
-    private Set<Integer> initIgnoredTokens(List<String> dictionary) {
-        // 创建忽略 token 集合
-        Set<Integer> set = new HashSet<>();
-        // CTC 解码中的空白符，表示无输出
-        set.add(modelConfig.getBlankIndex());
-        // 判断是否需要保留空格, 只有英文等西方语言需要保留空格
-        boolean useSpaceChar =
-                !"ch".equals(ocrConfig.getLang()) &&
-                        !"chi".equals(ocrConfig.getLang()) &&
-                        !"japan".equals(ocrConfig.getLang()) &&
-                        !"korean".equals(ocrConfig.getLang());
-        // 对于不使用空格的语言，忽略空格 token
-        if (!useSpaceChar) {
-            // 在字典中查找空格字符的位置
-            int spacePos = -1;
-            for (int i = 0; i < dictionary.size(); i++) {
-                if (" ".equals(dictionary.get(i))) {
-                    // 索引 +1 因为 blank token 占据了索引 0
-                    spacePos = i + 1;
-                    break;
-                }
-            }
-            // 如果找到空格，将其加入忽略集合
-            if (spacePos > 0) {
-                set.add(spacePos);
-            }
-        }
-        return set;
-    }
+//    private int resolveDictIndexOffset(int numClasses) {
+//        if (cachedDictIndexOffset != null) {
+//            return cachedDictIndexOffset;
+//        }
+//
+//        int offset;
+//        if (numClasses == dict.size() + 1) {
+//            offset = -1;
+//        } else if (numClasses == dict.size()) {
+//            offset = 0;
+//        } else if (numClasses > dict.size() + 1) {
+//            offset = -1;
+//        } else {
+//            offset = 0;
+//        }
+//
+//        cachedDictIndexOffset = offset;
+//        if (!decodeModeLogged) {
+//            log.info("Rec decode mode resolved: dictIndexOffset={} (numClasses={}, dictSize={})",
+//                    offset, numClasses, dict.size());
+//            decodeModeLogged = true;
+//        }
+//        return offset;
+//    }
+//
+//    private boolean shouldIgnoreToken(String token) {
+//        if (token == null) {
+//            return true;
+//        }
+//        if (!keepSpaceChar && " ".equals(token)) {
+//            return true;
+//        }
+//        String normalized = token.trim().toLowerCase(Locale.ROOT);
+//        return normalized.isEmpty()
+//                || "blank".equals(normalized)
+//                || "<blank>".equals(normalized)
+//                || "[blank]".equals(normalized);
+//    }
+//
+//    private boolean isKeepSpaceChar() {
+//        return !"ch".equals(ocrConfig.getLang())
+//                && !"chi".equals(ocrConfig.getLang())
+//                && !"japan".equals(ocrConfig.getLang())
+//                && !"korean".equals(ocrConfig.getLang());
+//    }
+//
 }

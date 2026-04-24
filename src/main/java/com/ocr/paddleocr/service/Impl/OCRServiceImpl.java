@@ -5,10 +5,7 @@ import com.ocr.paddleocr.config.OCRConfig;
 import com.ocr.paddleocr.domain.OCRContext;
 import com.ocr.paddleocr.domain.OCRResult;
 import com.ocr.paddleocr.domain.Word;
-import com.ocr.paddleocr.process.ClsProcessor;
-import com.ocr.paddleocr.process.DetProcessor;
-import com.ocr.paddleocr.process.ModelManager;
-import com.ocr.paddleocr.process.RecProcessor;
+import com.ocr.paddleocr.process.*;
 import com.ocr.paddleocr.utils.ImageUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.opencv.core.Mat;
@@ -133,13 +130,16 @@ public class OCRServiceImpl {
             }
             // 检测框识别
             recProcessor.recognize(context);
+//            if (ocrConfig.isUseDebug()) {
+//                DebugProcessor.printBoxes(context,ocrConfig.getDebugPath());
+//            }
             rawImage.release();
             // 检测结果
             List<Word> words = new ArrayList<>();
             context.getRecResultBoxes().forEach(textBox -> words.add(Word.builder()
                     .text(textBox.getRecText())
                     .confidence(textBox.getRecConfidence())
-                    .box(textBox.getRestorePoints())
+//                    .box(textBox.getRestorePoints())
                     .build()));
             return builder
                     .success(Boolean.TRUE)

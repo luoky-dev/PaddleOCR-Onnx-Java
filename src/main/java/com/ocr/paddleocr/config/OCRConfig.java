@@ -20,18 +20,27 @@ public class OCRConfig implements Serializable {
     @Builder.Default
     private String detModelPath = "src/main/java/resources/models/chi/det_model.onnx";
     @Builder.Default
-    private String clsModelPath = "src/main/java/resources/models/chi/cls_model.onnx";
+    private String clsModelPath = "src/main/java/resources/models/latin/cls_model.onnx";
     @Builder.Default
-    private String recModelPath = "src/main/java/resources/models/chi/rec_model.onnx";
+    private String recModelPath = "src/main/java/resources/models/latin/rec_model.onnx";
     @Builder.Default
-    private String dictPath = "src/main/java/resources/models/chi/ppocr_keys_v1.txt";
-
+    private String dictPath = "src/main/java/resources/models/latin/latin_dict.txt";
+    @Builder.Default
+    private String debugPath = "src/main/java/resources/test/output";
     // 是否启用分类检测模型
     @Builder.Default
     private boolean useCls = true;
-
+    // 是否启用debug模式
+    @Builder.Default
+    private boolean useDebug = true;
     // ==================== 检测模型参数 ====================
 
+    // 识别模型固态输入高度
+    @Builder.Default
+    private int detModelHeight = 960;
+    // 识别模型固态输入宽度
+    @Builder.Default
+    private int detModelWidth = 960;
     // 二值化阈值
     @Builder.Default
     private float detThresh = 0.3f;
@@ -49,7 +58,7 @@ public class OCRConfig implements Serializable {
     private int detMinSize = 5;
     // 是否返回多边形（false返回矩形）
     @Builder.Default
-    private boolean detUsePolygon = false;
+    private boolean detUsePolygon = true;
 
     // ==================== 方向分类参数 ====================
 

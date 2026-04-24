@@ -5,6 +5,7 @@ import org.opencv.imgproc.Imgproc;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 
@@ -57,6 +58,54 @@ public class OpenCVUtil {
         dstMat.release();
         transform.release();
         return result;
+    }
+
+    /**
+     * 多边形裁剪（适用于 detUsePolygon=true 的不规则文本框）
+     * 流程：多边形掩码 -> 位与保留区域 -> 外接矩形裁剪
+     *
+     * @param image 原始图像
+     * @param polygon 多边形顶点（>=3）
+     * @return 裁剪后的图像，失败时返回 empty Mat
+     */
+    public static Mat polygonCrop(Mat image, List<Point> polygon) {
+        if (image == null || image.empty() || polygon == null || polygon.size() < 3) {
+            return new Mat();
+        }
+
+        int maxX = image.cols() - 1;
+        int maxY = image.rows() - 1;
+        if (maxX < 0 || maxY < 0) {
+            return new Mat();
+        }
+
+        // 顶点裁剪到图像范围内，避免 fillPoly / boundingRect 越界问题
+        List<Point> clipped = new ArrayList<>(polygon.size());
+        for (Point p : polygon) {
+            double x = Math.max(0, Math.min(p.x, maxX));
+            double y = Math.max(0, Math.min(p.y, maxY));
+            clipped.add(new Point(x, y));
+        }
+
+        MatOfPoint poly = new MatOfPoint();
+        poly.fromList(clipped);
+        Rect rect = Imgproc.boundingRect(poly);
+        if (rect.width <= 0 || rect.height <= 0) {
+            poly.release();
+            return new Mat();
+        }
+
+        Mat mask = Mat.zeros(image.rows(), image.cols(), CvType.CV_8UC1);
+        Imgproc.fillPoly(mask, Collections.singletonList(poly), new Scalar(255));
+
+        Mat masked = new Mat();
+        Core.bitwise_and(image, image, masked, mask);
+        Mat cropped = new Mat(masked, rect).clone();
+
+        poly.release();
+        mask.release();
+        masked.release();
+        return cropped;
     }
 
     /**
@@ -202,22 +251,22 @@ public class OpenCVUtil {
     }
 
     /**
-     * 还原坐标到原图坐标
+     * 按宽高两个缩放比例分别还原坐标到原图坐标
+     *
      * @param points 还原前坐标
-     * @param scale 缩放比例
-     * @param srcW 原图像宽度
-     * @param srcH 原图像高度
+     * @param scaleX 宽度缩放比例
+     * @param scaleY 高度缩放比例
+     * @param srcW 原图宽度
+     * @param srcH 原图高度
      * @return List<Point>
      */
-    public static List<Point> restorePoints(List<Point> points, float scale, int srcW, int srcH) {
-        // 防止 scale 无效（如 0 或负数）
-        float safeScale = scale <= 0 ? 1.0f : scale;
+    public static List<Point> restorePoints(List<Point> points, float scaleX, float scaleY, int srcW, int srcH) {
+        float safeScaleX = scaleX <= 0 ? 1.0f : scaleX;
+        float safeScaleY = scaleY <= 0 ? 1.0f : scaleY;
         List<Point> restored = new ArrayList<>();
         for (Point p : points) {
-            // 坐标还原：除以缩放比例
-            double x = p.x / safeScale;
-            double y = p.y / safeScale;
-            // 边界裁剪，防止超出图像范围
+            double x = p.x / safeScaleX;
+            double y = p.y / safeScaleY;
             restored.add(new Point(
                     Math.max(0, Math.min(x, srcW - 1)),
                     Math.max(0, Math.min(y, srcH - 1))));
@@ -308,10 +357,9 @@ public class OpenCVUtil {
 
             // 垂直向量（向外）
             double vx = -uy;
-            double vy = ux;
 
             // 扩张向量
-            moveVecs.add(new double[]{vx * distance, vy * distance});
+            moveVecs.add(new double[]{vx * distance, ux * distance});
         }
 
         // 2. 计算新顶点位置

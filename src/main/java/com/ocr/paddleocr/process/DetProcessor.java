@@ -9,6 +9,7 @@ import com.ocr.paddleocr.domain.OCRContext;
 import com.ocr.paddleocr.domain.TextBox;
 import com.ocr.paddleocr.utils.OnnxUtil;
 import com.ocr.paddleocr.utils.OpenCVUtil;
+import lombok.extern.slf4j.Slf4j;
 import org.opencv.core.*;
 import org.opencv.imgproc.Imgproc;
 
@@ -46,29 +47,37 @@ public class DetProcessor {
         Mat raw = context.getRawMat();
         int srcW = raw.cols();
         int srcH = raw.rows();
-        // 计算缩放比例
-        int maxSide = Math.max(srcW, srcH);
-        float scale = maxSide > modelConfig.getDetMaxSideLen() ? (float) modelConfig.getDetMaxSideLen() / maxSide : 1.0f;
-        // 限制最大边长，不填充，如果最大边长超过限制(如960)，按比例缩小；否则保持原尺寸
-        // 计算缩放后尺寸
-        int dstW = Math.max((int) (srcW * scale), modelConfig.getResizeAlign());
-        int dstH = Math.max((int) (srcH * scale), modelConfig.getResizeAlign());
-        // 对齐到32的倍数，DB模型的下采样倍数是32，输入尺寸必须能被32整除
-        dstW = Math.max((dstW / modelConfig.getResizeAlign()) * modelConfig.getResizeAlign(), modelConfig.getResizeAlign());
-        dstH = Math.max((dstH / modelConfig.getResizeAlign()) * modelConfig.getResizeAlign(), modelConfig.getResizeAlign());
+        int dstW;
+        int dstH;
+        if (!OnnxUtil.isDynamicInput(modelManager.getDetSession())) {
+            // 固定输入模型：严格按模型声明尺寸送入
+            dstH = ocrConfig.getDetModelHeight();
+            dstW = ocrConfig.getDetModelWidth();
+        } else {
+            // 动态输入模型：沿用原有长边限制 + 对齐策略
+            int maxSide = Math.max(srcW, srcH);
+            float scale = maxSide > modelConfig.getDetMaxSideLen() ? (float) modelConfig.getDetMaxSideLen() / maxSide : 1.0f;
+            dstW = Math.max((int) (srcW * scale), modelConfig.getResizeAlign());
+            dstH = Math.max((int) (srcH * scale), modelConfig.getResizeAlign());
+            dstW = Math.max((dstW / modelConfig.getResizeAlign()) * modelConfig.getResizeAlign(), modelConfig.getResizeAlign());
+            dstH = Math.max((dstH / modelConfig.getResizeAlign()) * modelConfig.getResizeAlign(), modelConfig.getResizeAlign());
+        }
         // 缩放图像，使用双线性插值，保持图像内容不变形
         Mat resized = new Mat();
         Imgproc.resize(raw, resized, new Size(dstW, dstH));
         // 官方检测模型输入要求 RGB 顺序
         Mat rgb = new Mat();
         Imgproc.cvtColor(resized, rgb, Imgproc.COLOR_BGR2RGB);
-        resized.release();
         // 归一化 + 标准化
         Mat normalized = OpenCVUtil.normalize(rgb,modelConfig.getMean(),modelConfig.getStd());
         rgb.release();
+        // 对齐后的真实缩放比例（用于坐标精确还原）
+        float scaleX = srcW > 0 ? (float) dstW / (float) srcW : 1.0f;
+        float scaleY = srcH > 0 ? (float) dstH / (float) srcH : 1.0f;
         // 保存结果
         context.setDetPrepMat(normalized);
-        context.setDetPrepScale(scale);
+        context.setDetPrepScaleX(scaleX);
+        context.setDetPrepScaleY(scaleY);
     }
 
     private void parse(OCRContext context) throws OrtException {
@@ -119,9 +128,6 @@ public class DetProcessor {
         hierarchy.release();
         bitmap.release();
         prob.release();
-
-        // 按面积降序排序
-        contours.sort((a, b) -> Double.compare(Imgproc.contourArea(b), Imgproc.contourArea(a)));
 
         // 限制候选框数量
         if (contours.size() > modelConfig.getMaxCandidates()) {
@@ -190,11 +196,14 @@ public class DetProcessor {
             // 坐标还原
             List<Point> restorePoints = OpenCVUtil.restorePoints(
                     contourPoint,
-                    context.getDetPrepScale(),
+                    context.getDetPrepScaleX(),
+                    context.getDetPrepScaleY(),
                     context.getRawMat().width(),
                     context.getRawMat().height());
-            // 透视变换裁剪
-            Mat restoreMat = OpenCVUtil.perspectiveTransformCrop(context.getRawMat(),restorePoints);
+            // 裁剪
+            Mat restoreMat = ocrConfig.isDetUsePolygon()
+                    ? OpenCVUtil.polygonCrop(context.getRawMat(), restorePoints)
+                    : OpenCVUtil.perspectiveTransformCrop(context.getRawMat(), restorePoints);
 
             TextBox box = TextBox.builder()
                     .contourPoint(contourPoint)
@@ -206,4 +215,5 @@ public class DetProcessor {
         }
         context.setDetResultBoxes(boxes);
     }
+
 }

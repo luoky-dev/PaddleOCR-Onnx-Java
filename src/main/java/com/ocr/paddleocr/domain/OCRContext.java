@@ -20,14 +20,19 @@ public class OCRContext {
     private Mat rawMat;
 
     /**
-     * 检测预处理后的图像数据
+     * 检测预处理归一化 + 标准化的 RGB 顺序图像
      */
     private Mat detPrepMat;
 
     /**
-     * 检测预处理缩放比例
+     * 检测预处理宽度缩放比例（对齐后真实比例）
      */
-    private float detPrepScale;
+    private float detPrepScaleX;
+
+    /**
+     * 检测预处理高度缩放比例（对齐后真实比例）
+     */
+    private float detPrepScaleY;
 
     /**
      * 检测模型输出的概率图

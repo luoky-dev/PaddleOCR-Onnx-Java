@@ -257,11 +257,18 @@ public class ImageUtil {
         try (BufferedReader br = new BufferedReader(
                 new InputStreamReader(new FileInputStream(dictPath), StandardCharsets.UTF_8))) {
             String line;
+            boolean firstLine = true;
             while ((line = br.readLine()) != null) {
-                line = line.trim();
-                if (!line.isEmpty()) {
-                    dictionary.add(line);
+                // Keep original token text (especially " " space token in latin dict).
+                // Only skip truly empty lines.
+                if (firstLine && line.startsWith("\uFEFF")) {
+                    line = line.substring(1);
                 }
+                firstLine = false;
+                if (line.isEmpty()) {
+                    continue;
+                }
+                dictionary.add(line);
             }
         } catch (Exception e) {
             throw new RuntimeException("Failed to read dictionary: " + dictPath, e);
