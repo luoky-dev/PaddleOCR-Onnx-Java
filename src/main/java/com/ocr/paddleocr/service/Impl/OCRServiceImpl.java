@@ -7,7 +7,6 @@ import com.ocr.paddleocr.domain.OCRResult;
 import com.ocr.paddleocr.domain.TextBox;
 import com.ocr.paddleocr.domain.Word;
 import com.ocr.paddleocr.process.*;
-import com.ocr.paddleocr.utils.ImageUtil;
 import com.ocr.paddleocr.utils.OpenCVUtil;
 import lombok.extern.slf4j.Slf4j;
 
@@ -120,7 +119,7 @@ public class OCRServiceImpl {
         long startTime = System.currentTimeMillis();
         try {
             // 读取图片
-            context.setRawMat(ImageUtil.getImage(imagePath));
+            context.setRawMat(OpenCVUtil.getImage(imagePath));
             log.info("开始图像识别");
             // 图像检测和切割
             detProcessor.detect(context);
@@ -128,6 +127,7 @@ public class OCRServiceImpl {
                     context.getDetResultBoxes().size(),
                     context.getDetProcessTime());
             // 启用分类检测时进行分类检测和纠正
+            log.info("开始角度分类处理, 文本框数量: {}", context.getDetResultBoxes().size());
             if (ocrConfig.isUseCls()) {
                 clsProcessor.classify(context);
                 log.info("方向分类已启用, 倾斜框纠正数量: {}, 分类检测处理时间: {} ms",
@@ -144,16 +144,14 @@ public class OCRServiceImpl {
                     context.getRecProcessTime());
             if (ocrConfig.isUseDebug()) {
                 log.info("Debug模式已启用, 打印中间图像信息到 {} 目录", ocrConfig.getDebugPath());
-                DebugProcessor.printBoxes(context, ocrConfig.getDebugPath());
+                DebugProcessor.printDebugImages(context, ocrConfig, ocrConfig.getDebugPath());
             }
-            // 检测结果
             List<Word> words = new ArrayList<>();
             context.getRecResultBoxes().forEach(textBox -> words.add(Word.builder()
                     .text(textBox.getRecText())
                     .confidence(textBox.getRecConfidence())
                     .box(textBox.getRestorePoints())
                     .build()));
-
             return builder
                     .success(Boolean.TRUE)
                     .words(words)

@@ -1,8 +1,14 @@
 package com.ocr.paddleocr.utils;
 
 import org.opencv.core.*;
+import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -13,6 +19,241 @@ import java.util.List;
  * OpenCV 工具类
  */
 public class OpenCVUtil {
+
+
+    // 预定义颜色（BGR格式）
+    private static final Scalar COLOR_RED = new Scalar(0, 0, 255);
+    private static final Scalar COLOR_GREEN = new Scalar(0, 255, 0);
+    private static final Scalar COLOR_BLUE = new Scalar(255, 0, 0);
+    private static final Scalar COLOR_YELLOW = new Scalar(0, 255, 255);
+    private static final Scalar COLOR_CYAN = new Scalar(255, 255, 0);
+    private static final Scalar COLOR_MAGENTA = new Scalar(255, 0, 255);
+    private static final Scalar COLOR_WHITE = new Scalar(255, 255, 255);
+    private static final Scalar COLOR_BLACK = new Scalar(0, 0, 0);
+
+    /**
+     * 在图像上绘制检测框
+     *
+     * @param image 原始图像
+     * @param boxes 检测框坐标列表
+     * @param color 框颜色
+     * @param thickness 线条粗细
+     * @return 绘制后的图像（克隆，不影响原图）
+     */
+    public static Mat drawBoxes(Mat image, List<List<Point>> boxes, Scalar color, int thickness) {
+        if (image == null || image.empty()) {
+            return null;
+        }
+
+        if (boxes == null || boxes.isEmpty()) {
+            return image.clone();
+        }
+
+        // 克隆图像，避免修改原图
+        Mat result = image.clone();
+
+        for (int i = 0; i < boxes.size(); i++) {
+            List<Point> box = boxes.get(i);
+            if (box == null || box.size() < 4) {
+                continue;
+            }
+
+            // 绘制多边形
+            drawPolygon(result, box, color, thickness);
+
+            // 可选：绘制序号
+            Point center = getCenter(box);
+            putText(result, String.valueOf(i + 1), center, color);
+        }
+
+        return result;
+    }
+
+    /**
+     * 在图像上绘制检测框（使用默认颜色和粗细）
+     */
+    public static Mat drawBoxes(Mat image, List<List<Point>> boxes) {
+        return drawBoxes(image, boxes, COLOR_GREEN, 2);
+    }
+
+    /**
+     * 绘制多边形
+     */
+    public static void drawPolygon(Mat image, List<Point> points, Scalar color, int thickness) {
+        if (points == null || points.size() < 3) {
+            return;
+        }
+
+        // 将点转换为 MatOfPoint
+        MatOfPoint matOfPoint = new MatOfPoint();
+        matOfPoint.fromList(points);
+
+        // 绘制多边形轮廓
+        Imgproc.polylines(image, java.util.Collections.singletonList(matOfPoint),
+                true, color, thickness);
+
+        OpenCVUtil.releaseMat(matOfPoint);
+    }
+
+    public static void drawPolygon(Mat image, List<Point> points) {
+        drawPolygon(image, points, COLOR_GREEN, 2);
+    }
+
+    public static void drawText(Mat image, String text, Point position, Scalar color, double fontScale, int thickness) {
+        if (image == null || image.empty() || text == null || position == null) {
+            return;
+        }
+        Imgproc.putText(image, text, position, Imgproc.FONT_HERSHEY_SIMPLEX, fontScale, color, thickness);
+    }
+
+    public static void drawText(Mat image, String text, Point position) {
+        drawText(image, text, position, COLOR_GREEN,0.5, 1);
+    }
+
+    /**
+     * 绘制矩形框（轴对齐）
+     */
+    public static Mat drawRects(Mat image, List<Rect> rects, Scalar color, int thickness) {
+        if (image == null || image.empty()) {
+            return null;
+        }
+
+        Mat result = image.clone();
+
+        for (Rect rect : rects) {
+            Imgproc.rectangle(result, rect.tl(), rect.br(), color, thickness);
+        }
+
+        return result;
+    }
+
+    /**
+     * 绘制旋转矩形框
+     */
+    public static Mat drawRotatedRects(Mat image, List<RotatedRect> rects, Scalar color, int thickness) {
+        if (image == null || image.empty()) {
+            return null;
+        }
+
+        Mat result = image.clone();
+
+        for (RotatedRect rect : rects) {
+            Point[] vertices = new Point[4];
+            rect.points(vertices);
+
+            // 将顶点转换为列表
+            List<Point> points = java.util.Arrays.asList(vertices);
+            drawPolygon(result, points, color, thickness);
+        }
+
+        return result;
+    }
+
+    /**
+     * 获取多边形中心点
+     */
+    private static Point getCenter(List<Point> points) {
+        if (points == null || points.isEmpty()) {
+            return new Point(0, 0);
+        }
+
+        double sumX = 0, sumY = 0;
+        for (Point p : points) {
+            sumX += p.x;
+            sumY += p.y;
+        }
+        return new Point(sumX / points.size(), sumY / points.size());
+    }
+
+    /**
+     * 在图像上添加文本
+     */
+    private static void putText(Mat image, String text, Point position, Scalar color) {
+        // 添加背景矩形使文字更清晰
+        int fontFace = Imgproc.FONT_HERSHEY_SIMPLEX;
+        double fontScale = 0.5;
+        int thicknessText = 1;
+
+        // 使用数组来模拟引用传递
+        int[] baseline = new int[1];
+        Size textSize = Imgproc.getTextSize(text, fontFace, fontScale, thicknessText, baseline);
+
+        // 绘制背景矩形
+        int bgX = (int) position.x - 2;
+        int bgY = (int) position.y - (int) textSize.height - 2;
+        int bgWidth = (int) textSize.width + 4;
+        int bgHeight = (int) textSize.height + baseline[0] + 4;
+
+        Rect bgRect = new Rect(bgX, bgY, bgWidth, bgHeight);
+        Imgproc.rectangle(image, bgRect.tl(), bgRect.br(), COLOR_BLACK, -1);
+
+        // 绘制文字
+        Point textPos = new Point(position.x, position.y);
+        Imgproc.putText(image, text, textPos, fontFace, fontScale, color, thicknessText);
+    }
+
+    /**
+     * 根据置信度获取颜色
+     */
+    private static Scalar getColorByConfidence(float confidence) {
+        if (confidence >= 0.8) {
+            return COLOR_GREEN;      // 高置信度 - 绿色
+        } else if (confidence >= 0.5) {
+            return COLOR_YELLOW;     // 中置信度 - 黄色
+        } else {
+            return COLOR_RED;        // 低置信度 - 红色
+        }
+    }
+
+    /**
+     * 保存绘制结果到文件
+     */
+    public static void saveImage(Mat image, String outputPath) {
+        if (image == null || image.empty()) {
+            throw new IllegalArgumentException("Image cannot be empty");
+        }
+
+        File outputFile = new File(outputPath);
+        File parentDir = outputFile.getParentFile();
+        if (parentDir != null && !parentDir.exists() && !parentDir.mkdirs()) {
+            throw new IllegalStateException("Failed to create parent directory: " + parentDir.getAbsolutePath());
+        }
+
+        Imgcodecs.imwrite(outputPath, image);
+    }
+
+    public static Mat getImage(String inputPath){
+        if (inputPath == null || inputPath.trim().isEmpty()) {
+            throw new IllegalArgumentException("Path cannot be empty");
+        }
+        Mat image = Imgcodecs.imread(inputPath);
+        if (image.empty()) {
+            throw new IllegalArgumentException("Unable to read image");
+        }
+        return image;
+    }
+
+    public static List<String> readDictionary(String dictPath) {
+        List<String> dictionary = new ArrayList<>();
+        try (BufferedReader br = new BufferedReader(
+                new InputStreamReader(new FileInputStream(dictPath), StandardCharsets.UTF_8))) {
+            String line;
+            boolean firstLine = true;
+            while ((line = br.readLine()) != null) {
+                if (firstLine && line.startsWith("\uFEFF")) {
+                    line = line.substring(1);
+                }
+                firstLine = false;
+                if (line.isEmpty()) {
+                    continue;
+                }
+                dictionary.add(line);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to read dictionary: " + dictPath, e);
+        }
+        return dictionary;
+    }
 
     /**
      * 透视变换裁剪
@@ -55,7 +296,7 @@ public class OpenCVUtil {
         Imgproc.warpPerspective(image, result, transform, new Size(width, height));
         // 释放资源
         releaseMat(srcMat);
-        releaseMat(srcMat);
+        releaseMat(dstMat);
         releaseMat(transform);
         return result;
     }
@@ -415,6 +656,121 @@ public class OpenCVUtil {
     /**
      * Mat 资源判空释放
      */
+    public static Mat buildProbMat(float[][] probMap) {
+        if (probMap == null || probMap.length == 0 || probMap[0].length == 0) {
+            return new Mat();
+        }
+        int h = probMap.length;
+        int w = probMap[0].length;
+        Mat mat = new Mat(h, w, CvType.CV_32FC1);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                mat.put(y, x, probMap[y][x]);
+            }
+        }
+        return mat;
+    }
+
+    public static Mat createProbHeatmap(float[][] probMap) {
+        Mat prob = buildProbMat(probMap);
+        if (prob.empty()) {
+            releaseMat(prob);
+            return new Mat();
+        }
+        Mat prob8 = new Mat();
+        Core.normalize(prob, prob8, 0, 255, Core.NORM_MINMAX, CvType.CV_8UC1);
+        Mat heatmap = new Mat();
+        Imgproc.applyColorMap(prob8, heatmap, Imgproc.COLORMAP_JET);
+        releaseMat(prob8);
+        releaseMat(prob);
+        return heatmap;
+    }
+
+    public static Mat createBinaryMap(float[][] probMap, float threshold) {
+        Mat prob = buildProbMat(probMap);
+        if (prob.empty()) {
+            releaseMat(prob);
+            return new Mat();
+        }
+        Mat binary = new Mat();
+        Imgproc.threshold(prob, binary, threshold, 255, Imgproc.THRESH_BINARY);
+        binary.convertTo(binary, CvType.CV_8UC1);
+        releaseMat(prob);
+        return binary;
+    }
+
+    public static Mat toVisualizableImage(Mat src, boolean srcIsRgb) {
+        if (src == null || src.empty()) {
+            return new Mat();
+        }
+        Mat vis;
+        if (src.depth() == CvType.CV_8U) {
+            vis = src.clone();
+        } else {
+            vis = new Mat();
+            Core.normalize(src, vis, 0, 255, Core.NORM_MINMAX);
+            vis.convertTo(vis, CvType.CV_8UC(src.channels()));
+        }
+
+        if (vis.channels() == 1) {
+            Mat bgr = new Mat();
+            Imgproc.cvtColor(vis, bgr, Imgproc.COLOR_GRAY2BGR);
+            releaseMat(vis);
+            vis = bgr;
+        } else if (vis.channels() == 4) {
+            Mat bgr = new Mat();
+            Imgproc.cvtColor(vis, bgr, Imgproc.COLOR_BGRA2BGR);
+            releaseMat(vis);
+            vis = bgr;
+        }
+
+        if (srcIsRgb && vis.channels() == 3) {
+            Mat bgr = new Mat();
+            Imgproc.cvtColor(vis, bgr, Imgproc.COLOR_RGB2BGR);
+            releaseMat(vis);
+            vis = bgr;
+        }
+        return vis;
+    }
+
+    public static Mat resizeToHeight(Mat src, int targetHeight) {
+        if (src == null || src.empty() || targetHeight <= 0) {
+            return new Mat();
+        }
+        if (src.rows() == targetHeight) {
+            return src.clone();
+        }
+        int targetWidth = Math.max(1, (int) Math.round((double) src.cols() * targetHeight / src.rows()));
+        Mat resized = new Mat();
+        Imgproc.resize(src, resized, new Size(targetWidth, targetHeight));
+        return resized;
+    }
+
+    public static Mat concatHorizontal(List<Mat> mats) {
+        if (mats == null || mats.isEmpty()) {
+            return new Mat();
+        }
+        Mat merged = new Mat();
+        Core.hconcat(mats, merged);
+        return merged;
+    }
+
+    public static void saveImageAndRelease(Mat image, String outputPath) {
+        if (image == null || image.empty()) {
+            releaseMat(image);
+            return;
+        }
+        saveImage(image, outputPath);
+        releaseMat(image);
+    }
+
+    public static void ensureDir(String dir) {
+        File file = new File(dir);
+        if (!file.exists() && !file.mkdirs()) {
+            throw new IllegalStateException("failed to create debug directory: " + dir);
+        }
+    }
+
     public static void releaseMat(Mat mat) {
         if (mat != null) {
             mat.release();
