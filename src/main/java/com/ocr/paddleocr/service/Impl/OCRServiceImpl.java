@@ -40,9 +40,13 @@ public class OCRServiceImpl {
      * 私有构造 - 使用自定义配置
      */
     private OCRServiceImpl(OCRConfig ocrConfig) {
-        this.ocrConfig = ocrConfig;
+        if (ocrConfig == null) {
+            throw new IllegalArgumentException("OCR服务配置不能为空");
+        }
         this.gson = new Gson();
         try {
+            ocrConfig.validate();
+            this.ocrConfig = ocrConfig;
             this.modelManager = ModelManager.getInstance();
             synchronized (modelManager) {
                 if (!modelManager.isInitialized()) {
