@@ -204,6 +204,7 @@ public class DetProcessor {
             double area = Imgproc.contourArea(contour);
             if (area <= 1.0) {
                 skippedByArea++;
+                OpenCVUtil.releaseMat(contour);
                 continue;
             }
 
@@ -212,6 +213,7 @@ public class DetProcessor {
             float boxThresh = ocrConfig.getDetBoxThresh();
             if (score < boxThresh) {
                 skippedByScore++;
+                OpenCVUtil.releaseMat(contour);
                 continue;
             }
 
@@ -222,6 +224,7 @@ public class DetProcessor {
             if (perimeter < 1e-6) {
                 skippedByPerimeter++;
                 OpenCVUtil.releaseMat(contour2f);
+                OpenCVUtil.releaseMat(contour);
                 continue;
             }
 
@@ -234,6 +237,7 @@ public class DetProcessor {
             // 扩张后点数不足
             if (expanded.size() < 4) {
                 skippedByExpand++;
+                OpenCVUtil.releaseMat(contour);
                 continue;
             }
 
@@ -250,8 +254,9 @@ public class DetProcessor {
             } else {
                 // 返回最小外接矩形（水平矩形）
                 if (approx.size() < 4) {
-                    OpenCVUtil.releaseMat(expanded2f);
                     skippedByExpand++;
+                    OpenCVUtil.releaseMat(expanded2f);
+                    OpenCVUtil.releaseMat(contour);
                     continue;
                 }
                 MatOfPoint2f approx2f = new MatOfPoint2f(approx.toArray(new Point[0]));
@@ -271,6 +276,7 @@ public class DetProcessor {
             float minSize = ocrConfig.getDetMinSize();
             if (Math.min(sizeRect.size.width, sizeRect.size.height) < minSize) {
                 skippedBySize++;
+                OpenCVUtil.releaseMat(contour);
                 continue;
             }
 

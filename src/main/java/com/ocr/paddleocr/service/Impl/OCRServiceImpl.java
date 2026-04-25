@@ -6,11 +6,19 @@ import com.ocr.paddleocr.domain.OCRContext;
 import com.ocr.paddleocr.domain.OCRResult;
 import com.ocr.paddleocr.domain.TextBox;
 import com.ocr.paddleocr.domain.Word;
-import com.ocr.paddleocr.process.*;
+import com.ocr.paddleocr.process.ClsProcessor;
+import com.ocr.paddleocr.process.DebugProcessor;
+import com.ocr.paddleocr.process.DetProcessor;
+import com.ocr.paddleocr.process.ModelManager;
+import com.ocr.paddleocr.process.RecProcessor;
 import com.ocr.paddleocr.utils.OpenCVUtil;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Set;
 
 /**
  * OCR服务实现类 - 单例模式
@@ -150,15 +158,21 @@ public class OCRServiceImpl {
                 log.info("Debug模式已启用, 打印中间图像信息到 {} 目录", ocrConfig.getDebugPath());
                 DebugProcessor.printDebugImages(context, ocrConfig, ocrConfig.getDebugPath());
             }
+
             List<Word> words = new ArrayList<>();
-            context.getRecResultBoxes().forEach(textBox -> words.add(Word.builder()
-                    .text(textBox.getRecText())
-                    .confidence(textBox.getRecConfidence())
-                    .box(textBox.getRestorePoints())
-                    .build()));
+            if (context.getRecResultBoxes() != null) {
+                context.getRecResultBoxes().forEach(textBox -> words.add(Word.builder()
+                        .text(textBox.getRecText())
+                        .confidence(textBox.getRecConfidence())
+                        .box(textBox.getRestorePoints())
+                        .build()));
+            }
+
             return builder
                     .success(Boolean.TRUE)
                     .words(words)
+                    .imageWidth(context.getRawMat().width())
+                    .imageHeight(context.getRawMat().height())
                     .processingTime(System.currentTimeMillis() - startTime)
                     .build();
         } catch (Exception e) {
@@ -179,7 +193,6 @@ public class OCRServiceImpl {
 
         try {
             Set<TextBox> visited = Collections.newSetFromMap(new IdentityHashMap<>());
-
             releaseTextBoxes(context.getDetResultBoxes(), visited);
             releaseTextBoxes(context.getClsResultBoxes(), visited);
             releaseTextBoxes(context.getRecResultBoxes(), visited);
@@ -187,18 +200,16 @@ public class OCRServiceImpl {
             OpenCVUtil.releaseMat(context.getDetPrepMat());
             OpenCVUtil.releaseMat(context.getRawMat());
         } catch (Exception e) {
-            log.warn("释放 OCR 上下文资源失败", e);
+            log.warn("释放OCR上下文资源失败", e);
         } finally {
             context.setRawMat(null);
             context.setDetPrepMat(null);
             context.setDetProbMap(null);
             context.setDetResultBoxes(null);
-
             context.setClsBatchBoxes(null);
             context.setClsBatchChw(null);
             context.setClsLogitsList(null);
             context.setClsResultBoxes(null);
-
             context.setRecBatchBoxes(null);
             context.setRecBatchChw(null);
             context.setRecProbsList(null);
@@ -217,12 +228,27 @@ public class OCRServiceImpl {
             OpenCVUtil.releaseMat(box.getContourMat());
             OpenCVUtil.releaseMat(box.getRestoreMat());
             OpenCVUtil.releaseMat(box.getRotMat());
-
             box.setContourMat(null);
             box.setContourPoint(null);
             box.setRestoreMat(null);
             box.setRestorePoints(null);
             box.setRotMat(null);
+        }
+    }
+
+    public synchronized void restart() {
+        shutdown();
+        try {
+            synchronized (modelManager) {
+                if (!modelManager.isInitialized()) {
+                    modelManager.init(ocrConfig);
+                }
+            }
+            initialized = true;
+            log.info("OCR服务已重启");
+        } catch (Exception e) {
+            log.error("OCR服务重启失败", e);
+            throw new RuntimeException("OCR服务重启失败", e);
         }
     }
 

@@ -64,8 +64,6 @@ public class OCRService {
         return customInstance;
     }
 
-    // ==================== 静态方法（供开发者调用） ====================
-
     /**
      * 静态方法：识别图片（使用默认配置）
      *
@@ -87,6 +85,12 @@ public class OCRService {
         return getInstance(config).ocrService.recognize(imagePath);
     }
 
+    /**
+     * 重启服务
+     */
+    public void restart() {
+        ocrService.restart();
+    }
     /**
      * 关闭服务
      */

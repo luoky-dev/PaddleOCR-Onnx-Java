@@ -35,7 +35,7 @@ public class OCRConfig implements Serializable {
     private boolean useCls = true;
     // 是否启用debug模式
     @Builder.Default
-    private boolean useDebug = true;
+    private boolean useDebug = false;
     // ==================== 检测模型参数 ====================
 
     // 识别模型固态输入高度
@@ -79,9 +79,7 @@ public class OCRConfig implements Serializable {
     @Builder.Default
     private int gpuId = 0;
     @Builder.Default
-    private int numThreads = 4;
-    @Builder.Default
-    private boolean enableMKLDNN = false;
+    private int numThreads = 8;
 
     /**
      * 验证OCR配置的完整性和有效性
