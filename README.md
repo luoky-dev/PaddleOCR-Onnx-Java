@@ -2,7 +2,8 @@
 基于 ONNX Runtime 的 PaddleOCR Java 实现，支持文本检测、识别和方向分类。
 > 总结：**一个开箱即用的 Java OCR SDK，基于 ONNX Runtime，在 CPU/GPU 上都能跑通“检测 + 方向分类 + 识别”全流程。**
 
-PaddleOCR-Onnx-Java 是一个面向 Java 业务系统的 OCR 推理组件。  
+PaddleOCR-Onnx-Java 是一个面向 Java 业务系统的 OCR 推理组件。 
+基于 ONNX Runtime + OpenCV 的 Java OCR SDK，提供从图片路径到 OCR 结果 JSON 的端到端能力，覆盖文本检测（det）、方向分类（cls）和文本识别（rec）。 
 输入图片路径，输出结构化识别结果（文本、置信度、位置、耗时），适合快速接入后端服务或离线任务。
 
 ## 功能矩阵
