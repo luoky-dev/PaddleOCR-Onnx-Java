@@ -54,9 +54,9 @@ public class OpenCVUtil {
         Mat result = new Mat();
         Imgproc.warpPerspective(image, result, transform, new Size(width, height));
         // 释放资源
-        srcMat.release();
-        dstMat.release();
-        transform.release();
+        releaseMat(srcMat);
+        releaseMat(srcMat);
+        releaseMat(transform);
         return result;
     }
 
@@ -91,7 +91,7 @@ public class OpenCVUtil {
         poly.fromList(clipped);
         Rect rect = Imgproc.boundingRect(poly);
         if (rect.width <= 0 || rect.height <= 0) {
-            poly.release();
+            releaseMat(poly);
             return new Mat();
         }
 
@@ -102,9 +102,9 @@ public class OpenCVUtil {
         Core.bitwise_and(image, image, masked, mask);
         Mat cropped = new Mat(masked, rect).clone();
 
-        poly.release();
-        mask.release();
-        masked.release();
+        releaseMat(poly);
+        releaseMat(mask);
+        releaseMat(masked);
         return cropped;
     }
 
@@ -184,7 +184,7 @@ public class OpenCVUtil {
         Core.merge(channels, floatMat);
         // 释放临时资源
         for (Mat ch : channels) {
-            ch.release();
+            releaseMat(ch);
         }
         return floatMat;
     }
@@ -216,13 +216,13 @@ public class OpenCVUtil {
         Mat floatMat = new Mat();
         // 1.0/255.0 将像素值从 [0, 255] 映射到 [0, 1]
         resized.convertTo(floatMat, CvType.CV_32FC3, 1.0 / 255.0);
-        resized.release();
+        releaseMat(resized);
 
         // 转换为 HWC 格式数组
         // HWC: Height x Width x Channel (高度 x 宽度 x 通道)
         float[] hwc = new float[imgH * resizedW * 3];
         floatMat.get(0, 0, hwc);
-        floatMat.release();
+        releaseMat(floatMat);
 
         // 转换为 ONNX 模型要求的输入 CHW 格式, 并归一化到 [-1, 1]
         // CHW: Channel x Height x Width (通道 x 高度 x 宽度)
@@ -294,7 +294,7 @@ public class OpenCVUtil {
         Mat mask = new Mat(height, width, CvType.CV_8UC1, new Scalar(0));
         MatOfPoint matOfPoint = new MatOfPoint(points);
         Imgproc.fillPoly(mask, java.util.Collections.singletonList(matOfPoint), new Scalar(255));
-        matOfPoint.release();
+        releaseMat(matOfPoint);
 
         // 计算轮廓内像素的平均概率
         double sum = 0;
@@ -308,7 +308,7 @@ public class OpenCVUtil {
             }
         }
 
-        mask.release();
+        releaseMat(mask);
         return count > 0 ? sum / count : 0.0;
     }
 
@@ -406,10 +406,18 @@ public class OpenCVUtil {
             result.add(new Point(point[0], point[1]));
         }
 
-        mat.release();
-        approx.release();
+        releaseMat(mat);
+        releaseMat(approx);
 
         return result;
     }
 
+    /**
+     * Mat 资源判空释放
+     */
+    public static void releaseMat(Mat mat) {
+        if (mat != null) {
+            mat.release();
+        }
+    }
 }

@@ -69,7 +69,8 @@ public class DetProcessor {
         Imgproc.cvtColor(resized, rgb, Imgproc.COLOR_BGR2RGB);
         // 归一化 + 标准化
         Mat normalized = OpenCVUtil.normalize(rgb,modelConfig.getMean(),modelConfig.getStd());
-        rgb.release();
+        OpenCVUtil.releaseMat(resized);
+        OpenCVUtil.releaseMat(rgb);
         // 对齐后的真实缩放比例（用于坐标精确还原）
         float scaleX = srcW > 0 ? (float) dstW / (float) srcW : 1.0f;
         float scaleY = srcH > 0 ? (float) dstH / (float) srcH : 1.0f;
@@ -115,7 +116,7 @@ public class DetProcessor {
             Mat kernel = Imgproc.getStructuringElement(
                     Imgproc.MORPH_RECT, new Size(modelConfig.getDilateKernelSize(), modelConfig.getDilateKernelSize()));
             Imgproc.dilate(bitmap, bitmap, kernel);
-            kernel.release();
+            OpenCVUtil.releaseMat(kernel);
         }
 
         // 查找轮廓
@@ -124,9 +125,9 @@ public class DetProcessor {
         Imgproc.findContours(bitmap, contours, hierarchy,
                 Imgproc.RETR_LIST,      // 检测所有轮廓，不建立层级关系
                 Imgproc.CHAIN_APPROX_SIMPLE);  // 压缩水平/垂直/对角线段
-        hierarchy.release();
-        bitmap.release();
-        prob.release();
+        OpenCVUtil.releaseMat(hierarchy);
+        OpenCVUtil.releaseMat(bitmap);
+        OpenCVUtil.releaseMat(prob);
 
         // 限制候选框数量
         if (contours.size() > modelConfig.getMaxCandidates()) {
@@ -149,14 +150,14 @@ public class DetProcessor {
             MatOfPoint2f contour2f = new MatOfPoint2f(contourPoints);
             double perimeter = Imgproc.arcLength(contour2f, true);
             if (perimeter < 1e-6) {
-                contour2f.release();
+                OpenCVUtil.releaseMat(contour2f);
                 continue;
             }
 
             // unclip 扩张公式 距离 = 面积 * 扩张比率 / 周长
             double distance = area * ocrConfig.getDetUnclipRatio() / perimeter;
             List<Point> expanded = OpenCVUtil.unclipPolygon(contourPoints, distance);
-            contour2f.release();
+            OpenCVUtil.releaseMat(contour2f);
             // 扩张后点数不足，跳过
             if (expanded.size() < 4) continue;
 
@@ -174,12 +175,12 @@ public class DetProcessor {
             } else {
                 // 返回最小外接矩形（水平矩形）
                 if (approx.size() < 4) {
-                    expanded2f.release();
+                    OpenCVUtil.releaseMat(expanded2f);
                     continue;
                 }
                 MatOfPoint2f approx2f = new MatOfPoint2f(approx.toArray(new Point[0]));
                 RotatedRect rr = Imgproc.minAreaRect(approx2f);
-                approx2f.release();
+                OpenCVUtil.releaseMat(approx2f);
                 Point[] vertices = new Point[4];
                 rr.points(vertices);
                 contourPoint = OpenCVUtil.orderPoints(Arrays.asList(vertices));
@@ -188,8 +189,8 @@ public class DetProcessor {
 
             // 最小尺寸过滤
             RotatedRect sizeRect = Imgproc.minAreaRect(box2f);
-            box2f.release();
-            expanded2f.release();
+            OpenCVUtil.releaseMat(box2f);
+            OpenCVUtil.releaseMat(expanded2f);
             if (Math.min(sizeRect.size.width, sizeRect.size.height) < ocrConfig.getDetMinSize()) continue;
 
             // 坐标还原

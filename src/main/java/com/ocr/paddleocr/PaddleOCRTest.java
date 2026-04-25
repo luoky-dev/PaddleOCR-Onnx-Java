@@ -1,5 +1,6 @@
 package com.ocr.paddleocr;
 
+import com.ocr.paddleocr.config.OCRConfig;
 import com.ocr.paddleocr.service.OCRService;
 import lombok.extern.slf4j.Slf4j;
 
@@ -12,8 +13,8 @@ public class PaddleOCRTest {
         // 测试图片路径 - 请修改为实际的图片路径
 //        String testImagePath = "C:\\Users\\26221\\Desktop\\paddle-ocr-onnx\\INE_FRONT4.jpeg";
 //        String testImagePath = "src/main/java/resources/test/QQ20260321-104004.png";
-//        String testImagePath = "src/main/java/resources/test/20260409-141403.jpg";
-        String testImagePath = "src/main/java/resources/test/chi_test.jpg";
+        String testImagePath = "src/main/java/resources/test/20260409-141403.jpg";
+//        String testImagePath = "src/main/java/resources/test/chi_test.jpg";
 
         // 运行测试
         runBasicTest(testImagePath);
@@ -22,10 +23,17 @@ public class PaddleOCRTest {
     public static void runBasicTest(String imagePath) {
         log.info("========== 基础识别测试 ==========");
         log.info("图片路径: {}", imagePath);
+        OCRConfig config = OCRConfig.builder()
+                .batchSize(16)
+                .detModelPath("src/main/java/resources/models/latin/det_model.onnx")
+                .clsModelPath("src/main/java/resources/models/latin/cls_model.onnx")
+                .recModelPath("src/main/java/resources/models/latin/rec_model.onnx")
+                .dictPath("src/main/java/resources/models/latin/latin_dict.txt")
+                .build();
 
         try{
             // 执行OCR识别
-            String jsonResult = OCRService.recognize(imagePath);
+            String jsonResult = OCRService.recognize(config,imagePath);
 
             // 打印识别结果
             System.out.println(jsonResult);

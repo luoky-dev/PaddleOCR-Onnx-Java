@@ -172,7 +172,7 @@ public class ClsProcessor {
             box.setRotAngle(-90);
         } else {
             box.setRotate(false);
-            dst.release();
+            OpenCVUtil.releaseMat(dst);
             return;
         }
         box.setRotMat(dst);

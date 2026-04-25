@@ -69,7 +69,7 @@ public class ModelManager implements AutoCloseable {
         long loadTimeMs = System.currentTimeMillis() - startTime;
         this.initialized = true;
 
-        log.info("模型管理器初始化完成, 耗时: {}ms", loadTimeMs);
+        log.info("模型管理器初始化完成, 耗时: {} ms", loadTimeMs);
     }
 
     /**
