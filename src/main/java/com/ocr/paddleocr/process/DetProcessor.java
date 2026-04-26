@@ -177,9 +177,6 @@ public class DetProcessor {
         Imgproc.findContours(bitmap, contours, hierarchy,
                 Imgproc.RETR_LIST,
                 Imgproc.CHAIN_APPROX_SIMPLE);
-        OpenCVUtil.releaseMat(hierarchy);
-        OpenCVUtil.releaseMat(bitmap);
-        OpenCVUtil.releaseMat(prob);
 
         int contourCount = contours.size();
         log.debug("轮廓检测完成, 原始轮廓数: {}", contourCount);
@@ -209,7 +206,7 @@ public class DetProcessor {
             }
 
             // 计算轮廓区域内概率图的平均置信度并过滤
-            double score = OpenCVUtil.getScore(contour, probMap);
+            double score = OpenCVUtil.getScoreFast(contour, prob);
             float boxThresh = ocrConfig.getDetBoxThresh();
             if (score < boxThresh) {
                 skippedByScore++;
@@ -302,7 +299,11 @@ public class DetProcessor {
                     .build();
             boxes.add(box);
         }
-
+        // 资源释放
+        OpenCVUtil.releaseMat(hierarchy);
+        OpenCVUtil.releaseMat(bitmap);
+        OpenCVUtil.releaseMat(prob);
+        // 设置结果
         context.setDetResultBoxes(boxes);
 
         long elapsed = System.currentTimeMillis() - startTime;

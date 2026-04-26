@@ -135,6 +135,15 @@ public class OCRServiceImpl {
             log.info("开始图像识别");
             // 图像检测和切割
             detProcessor.detect(context);
+            if (context.getDetResultBoxes().isEmpty()){
+                return builder
+                        .success(Boolean.FALSE)
+                        .error("未检测到文本框, 识别失败")
+                        .imageWidth(context.getRawMat().width())
+                        .imageHeight(context.getRawMat().height())
+                        .processingTime(System.currentTimeMillis() - startTime)
+                        .build();
+            }
             log.info("检测完成, 检测框数量: {}, 检测处理时间: {} ms",
                     context.getDetResultBoxes().size(),
                     context.getDetProcessTime());
@@ -158,7 +167,15 @@ public class OCRServiceImpl {
                 log.info("Debug模式已启用, 打印中间图像信息到 {} 目录", ocrConfig.getDebugPath());
                 DebugProcessor.printDebugImages(context, ocrConfig, ocrConfig.getDebugPath());
             }
-
+            if (context.getRecResultBoxes().isEmpty()){
+                return builder
+                        .success(Boolean.FALSE)
+                        .error("无文本框识别结果, 识别失败")
+                        .imageWidth(context.getRawMat().width())
+                        .imageHeight(context.getRawMat().height())
+                        .processingTime(System.currentTimeMillis() - startTime)
+                        .build();
+            }
             List<Word> words = new ArrayList<>();
             if (context.getRecResultBoxes() != null) {
                 context.getRecResultBoxes().forEach(textBox -> words.add(Word.builder()

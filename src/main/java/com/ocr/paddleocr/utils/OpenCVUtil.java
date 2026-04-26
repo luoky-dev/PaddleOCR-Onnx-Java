@@ -336,16 +336,24 @@ public class OpenCVUtil {
             return new Mat();
         }
 
-        Mat mask = Mat.zeros(image.rows(), image.cols(), CvType.CV_8UC1);
-        Imgproc.fillPoly(mask, Collections.singletonList(poly), new Scalar(255));
+        List<Point> roiPolygon = new ArrayList<>(clipped.size());
+        for (Point p : clipped) {
+            roiPolygon.add(new Point(p.x - rect.x, p.y - rect.y));
+        }
 
-        Mat masked = new Mat();
-        Core.bitwise_and(image, image, masked, mask);
-        Mat cropped = new Mat(masked, rect).clone();
+        MatOfPoint roiPoly = new MatOfPoint();
+        roiPoly.fromList(roiPolygon);
+        Mat mask = Mat.zeros(rect.height, rect.width, CvType.CV_8UC1);
+        Imgproc.fillPoly(mask, Collections.singletonList(roiPoly), new Scalar(255));
+
+        Mat roi = new Mat(image, rect);
+        Mat cropped = new Mat();
+        Core.bitwise_and(roi, roi, cropped, mask);
 
         releaseMat(poly);
+        releaseMat(roiPoly);
         releaseMat(mask);
-        releaseMat(masked);
+        releaseMat(roi);
         return cropped;
     }
 
@@ -551,6 +559,49 @@ public class OpenCVUtil {
 
         releaseMat(mask);
         return count > 0 ? sum / count : 0.0;
+    }
+
+    public static double getScoreFast(MatOfPoint contour, Mat probMat) {
+        if (contour == null || probMat == null || probMat.empty()) {
+            return 0.0;
+        }
+
+        Point[] points = contour.toArray();
+        if (points.length < 3) {
+            return 0.0;
+        }
+
+        Rect rect = Imgproc.boundingRect(contour);
+        if (rect.width <= 0 || rect.height <= 0) {
+            return 0.0;
+        }
+
+        int safeX = Math.max(0, rect.x);
+        int safeY = Math.max(0, rect.y);
+        int safeWidth = Math.min(rect.width, probMat.cols() - safeX);
+        int safeHeight = Math.min(rect.height, probMat.rows() - safeY);
+        if (safeWidth <= 0 || safeHeight <= 0) {
+            return 0.0;
+        }
+
+        Rect safeRect = new Rect(safeX, safeY, safeWidth, safeHeight);
+        List<Point> roiPoints = new ArrayList<>(points.length);
+        for (Point point : points) {
+            roiPoints.add(new Point(point.x - safeRect.x, point.y - safeRect.y));
+        }
+
+        MatOfPoint roiContour = new MatOfPoint();
+        roiContour.fromList(roiPoints);
+        Mat mask = Mat.zeros(safeRect.height, safeRect.width, CvType.CV_8UC1);
+        Imgproc.fillPoly(mask, Collections.singletonList(roiContour), new Scalar(255));
+
+        Mat probRoi = new Mat(probMat, safeRect);
+        Scalar mean = Core.mean(probRoi, mask);
+
+        releaseMat(roiContour);
+        releaseMat(mask);
+        releaseMat(probRoi);
+        return mean.val[0];
     }
 
     /**
