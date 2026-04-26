@@ -1,6 +1,6 @@
 # PaddleOCR-Onnx-Java
 基于 ONNX Runtime 的 PaddleOCR Java 实现，支持文本检测、识别和方向分类。
-> 总结：**一个开箱即用的 Java OCR SDK，基于 ONNX Runtime，在 CPU/GPU 上都能跑通“检测 + 方向分类 + 识别”全流程。**
+> 总结：**一个开箱即用的 Java OCR SDK，基于 ONNX Runtime，在 CPU 上能跑通“检测 + 方向分类 + 识别”全流程。**
 
 PaddleOCR-Onnx-Java 是一个面向 Java 业务系统的 OCR 推理组件。 
 基于 ONNX Runtime + OpenCV 的 Java OCR SDK，提供从图片路径到 OCR 结果 JSON 的端到端能力，覆盖文本检测（det）、方向分类（cls）和文本识别（rec）。 
@@ -16,7 +16,6 @@ PaddleOCR-Onnx-Java 是一个面向 Java 业务系统的 OCR 推理组件。
 | 多语言模型切换 | ✅ | 通过模型路径与字典配置切换 |
 | 批量推理 | ✅ | 可配置 `batchSize` |
 | 多线程推理 | ✅ | 可配置 `numThreads` |
-| GPU 推理 | ✅ | `useGpu=true` 优先 CUDA，失败自动回退 CPU |
 | Debug 可视化导出 | ✅ | 检测框/热力图/叠加图等中间结果导出 |
 
 ## 快速开始
@@ -33,7 +32,7 @@ PaddleOCR-Onnx-Java 是一个面向 Java 业务系统的 OCR 推理组件。
 </dependency>
 ```
 
-> 构建本项目时，默认使用 `onnxruntime`（CPU）；使用 `-Pgpu` 可切换 `onnxruntime_gpu`。
+> 构建本项目时，默认使用 `onnxruntime`（CPU）
 
 ### 2. 准备模型与字典
 
@@ -69,13 +68,7 @@ public class Demo {
 }
 ```
 
-### 4. GPU 构建（可选）
-
-```bash
-mvn -Pgpu clean package
-```
-
-### 5. 常见输出
+### 4. 常见输出
 
 返回 JSON 典型字段：
 - `success`: 是否成功
