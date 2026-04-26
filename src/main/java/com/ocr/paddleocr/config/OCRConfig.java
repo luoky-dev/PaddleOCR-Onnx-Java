@@ -32,7 +32,7 @@ public class OCRConfig implements Serializable {
     private String debugPath = "src/main/java/resources/test/output";
     // 是否启用分类检测模型
     @Builder.Default
-    private boolean useCls = true;
+    private boolean useCls = false;
     // 是否启用debug模式
     @Builder.Default
     private boolean useDebug = false;
