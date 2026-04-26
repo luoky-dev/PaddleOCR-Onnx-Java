@@ -206,7 +206,7 @@ public class DetProcessor {
             }
 
             // 计算轮廓区域内概率图的平均置信度并过滤
-            double score = OpenCVUtil.getScore(contour, probMap);
+            double score = OpenCVUtil.getScoreFast(contour, prob);
             float boxThresh = ocrConfig.getDetBoxThresh();
             if (score < boxThresh) {
                 skippedByScore++;
