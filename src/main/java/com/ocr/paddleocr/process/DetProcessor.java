@@ -55,11 +55,12 @@ public class DetProcessor {
         int srcH = raw.rows();
         int dstW;
         int dstH;
-        log.debug("原始图像尺寸: {}x{}", srcW, srcH);
-        if (!OnnxUtil.isDynamicImageInput(modelManager.getDetSession())) {
+        long[] modelInputShape = OnnxUtil.getModelInputShape(modelManager.getDetSession());
+        log.info("检测模型输入图像尺寸(-1代表动态输入): H:{} x W:{} ", modelInputShape[2], modelInputShape[3]);
+        if (modelInputShape[2] != -1 && modelInputShape[3] != -1) {
             // 固定输入模型: 严格按模型声明尺寸送入
-            dstH = ocrConfig.getDetModelHeight();
-            dstW = ocrConfig.getDetModelWidth();
+            dstH = Math.toIntExact(modelInputShape[3]);
+            dstW = Math.toIntExact(modelInputShape[2]);
             log.debug("固定尺寸模型, 目标尺寸: {}x{}", dstW, dstH);
         } else {
             // 动态输入模型: 沿用原有长边限制 + 对齐策略

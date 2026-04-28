@@ -75,21 +75,6 @@ public class OCRContext {
     private long clsProcessTime;
 
     /**
-     * 识别模型分批处理检测框
-     */
-    private List<List<TextBox>> recBatchBoxes;
-
-    /**
-     * 识别模型分批预处理后的模型输入数据
-     */
-    private List<List<float[]>> recBatchChw;
-
-    /**
-     * 识别模型输出 probs 数组
-     */
-    private List<float[][][]> recProbsList;
-
-    /**
      * 识别模型处理结果检测框
      */
     private List<TextBox> recResultBoxes;
@@ -98,15 +83,5 @@ public class OCRContext {
      * 识别模型处理时间（毫秒）
      */
     private long recProcessTime;
-
-    /**
-     * 是否成功
-     */
-    private boolean success;
-
-    /**
-     * 错误信息
-     */
-    private String error;
 
 }

@@ -38,6 +38,9 @@ public class OCRConfig implements Serializable {
     private boolean useDebug = false;
     // ==================== 检测模型参数 ====================
 
+    // 是否使用启用预检测(适用图片范围: 大图密集文字、大量白边、大量无有效文本区域)
+    @Builder.Default
+    private boolean usePreDet = false;
     // 识别模型固态输入高度
     @Builder.Default
     private int detModelHeight = 960;
@@ -55,7 +58,7 @@ public class OCRConfig implements Serializable {
     private float detBoxThresh = 0.5f;
     // unclip 扩张比率
     @Builder.Default
-    private float detUnclipRatio = 1.6f;
+    private float detUnclipRatio = 1.3f;
     // 最小检测框尺寸过滤（px）
     @Builder.Default
     private int detMinSize = 5;
