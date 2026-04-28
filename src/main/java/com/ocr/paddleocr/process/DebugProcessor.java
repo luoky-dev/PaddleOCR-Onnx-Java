@@ -164,8 +164,7 @@ public class DebugProcessor {
             // 原始图像（旋转前）
             Mat before = OpenCVUtil.toVisualizableImage(box.getRestoreMat(), false);
             // 旋转后图像（如果有旋转）
-            Mat afterSource = (box.getRotMat() != null && !box.getRotMat().empty()) ? box.getRotMat() : box.getRestoreMat();
-            Mat after = OpenCVUtil.toVisualizableImage(afterSource, false);
+            Mat after = OpenCVUtil.toVisualizableImage(box.getRotMat(), false);
             if (before.empty() || after.empty()) {
                 OpenCVUtil.releaseMat(before);
                 OpenCVUtil.releaseMat(after);

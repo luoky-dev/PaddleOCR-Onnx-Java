@@ -17,42 +17,65 @@ import java.util.Map;
 public class OnnxUtil {
 
     /**
-     * 判断模型输入是否为动态 shape
-     * true: dynamic input; false: fixed input.
+     * 判断模型是否是动态图像尺寸输入
+     * @param session ONNX Runtime 会话
+     * @return true 是动态输入
+     * @throws OrtException 异常信息
      */
-    public static Boolean isDynamicInput(OrtSession session) {
-        try {
-            long[] shape = getInputShape(session);
-            if (shape.length != 4) {
-                return true;
-            }
-            return shape[1] <= 0 || shape[2] <= 0 || shape[3] <= 0;
-        } catch (Exception e) {
-            return true;
-        }
+    public static Boolean isDynamicImageInput(OrtSession session) throws OrtException {
+        return isDynamicHeightInput(session) && isDynamicWithInput(session);
     }
 
     /**
-     * 返回模型输入 shape
-     * 动态维度一般为 <= 0（如 -1）。
+     * 判断模型是否是图像动态高度尺寸输入
+     * @param session ONNX Runtime 会话
+     * @return true 是动态高度输入
+     * @throws OrtException 异常信息
      */
-    public static long[] getInputShape(OrtSession session) throws OrtException {
+    public static Boolean isDynamicHeightInput(OrtSession session) throws OrtException {
+        long[] inputShape = getModelInputShape(session);
+        return inputShape[2] == -1;
+    }
+
+    /**
+     * 判断模型是否是图像动态宽度尺寸输入
+     * @param session ONNX Runtime 会话
+     * @return true 是动态宽度输入
+     * @throws OrtException 异常信息
+     */
+    public static Boolean isDynamicWithInput(OrtSession session) throws OrtException {
+        long[] inputShape = getModelInputShape(session);
+        return inputShape[3] == -1;
+    }
+
+    /**
+     * 从 ONNX Runtime 会话中提取模型的输入张量形状
+     * Paddle模型的输入形状为[Batch,Channel,Height,Width]
+     * @param session ONNX Runtime 会话
+     * @return long[] 输入张量形状
+     * @throws OrtException 异常信息
+     */
+    public static long[] getModelInputShape(OrtSession session) throws OrtException {
+        // 获取模型输入信息
         Map<String, NodeInfo> inputInfo = session.getInputInfo();
+        // 验证输入不为空
         if (inputInfo == null || inputInfo.isEmpty()) {
             throw new OrtException("Model has no input info");
         }
-
+        // 查找名为 "x" 的输入, PaddleOCR 标准模型使用 "x" 作为输入名称
         NodeInfo nodeInfo = inputInfo.get("x");
+        // 降级处理: 取第一个输入, 如果找不到 "x"，可能是其他框架导出的模型
         if (nodeInfo == null) {
             Map.Entry<String, NodeInfo> first = inputInfo.entrySet().iterator().next();
             nodeInfo = first.getValue();
         }
-
+        // 验证类型为 TensorInfo, 如果不是 TensorInfo 格式不兼容
         if (!(nodeInfo.getInfo() instanceof TensorInfo)) {
             throw new OrtException("Input info is not TensorInfo");
         }
-
+        // 提取形状数组
         long[] shape = ((TensorInfo) nodeInfo.getInfo()).getShape();
+        // 验证形状有效性, PaddleOCR 模型要求输入是 4 维张量 (N, C, H, W)
         if (shape == null || shape.length != 4) {
             throw new OrtException("Input shape is invalid");
         }
@@ -60,7 +83,7 @@ public class OnnxUtil {
     }
 
     /**
-     * 创建单张输入 Tensor。
+     * 创建单张输入 Tensor
      */
     public static OnnxTensor createInputTensor(Mat image, OrtEnvironment env) throws OrtException {
         int height = image.rows();
@@ -71,7 +94,7 @@ public class OnnxUtil {
         float[] data = new float[channels * height * width];
         image.get(0, 0, data);
 
-        // 转换为CHW格式（已经是RGB顺序）
+        // 转换为CHW格式
         for (int c = 0; c < channels; c++) {
             for (int h = 0; h < height; h++) {
                 for (int w = 0; w < width; w++) {
@@ -87,7 +110,7 @@ public class OnnxUtil {
     }
 
     /**
-     * 创建批量输入 Tensor。
+     * 创建批量输入 Tensor
      */
     public static OnnxTensor createBatchInputTensor(List<float[]> chwList,
                                                     OrtEnvironment env,

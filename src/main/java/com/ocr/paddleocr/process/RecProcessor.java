@@ -6,6 +6,8 @@ import ai.onnxruntime.OrtSession;
 import com.ocr.paddleocr.config.ModelConfig;
 import com.ocr.paddleocr.config.OCRConfig;
 import com.ocr.paddleocr.domain.OCRContext;
+import com.ocr.paddleocr.domain.RecBatch;
+import com.ocr.paddleocr.domain.RecState;
 import com.ocr.paddleocr.domain.TextBox;
 import com.ocr.paddleocr.utils.OnnxUtil;
 import com.ocr.paddleocr.utils.OpenCVUtil;
@@ -63,7 +65,7 @@ public class RecProcessor {
 
     private RecState preprocess(List<TextBox> sourceBoxes) throws OrtException {
         long startTime = System.currentTimeMillis();
-        boolean dynamicWidth = OnnxUtil.isDynamicInput(modelManager.getRecSession());
+        boolean dynamicWidth = OnnxUtil.isDynamicWithInput(modelManager.getRecSession());
         int batchSize = ocrConfig.getBatchSize();
         int recHeight = modelConfig.getRecModelHeight();
         int fixedRecWidth = modelConfig.getRecModelWith();
@@ -78,7 +80,7 @@ public class RecProcessor {
             List<TextBox> batchBoxes = new ArrayList<>(sortedBoxes.subList(begin, end));
             int batchWidth = resolveBatchWidth(batchBoxes, recHeight, fixedRecWidth, dynamicWidth);
             List<float[]> batchChw = preprocessBatch(batchBoxes, recHeight, batchWidth);
-            batches.add(new RecBatch(batchBoxes, batchChw, batchWidth));
+            batches.add(RecBatch.builder().boxes(batchBoxes).batchWidth(batchWidth).chwList(batchChw).build());
         }
 
         long elapsed = System.currentTimeMillis() - startTime;
@@ -106,38 +108,38 @@ public class RecProcessor {
         int batchIndex = 0;
         int totalSamples = 0;
 
-        for (RecBatch batch : state.batches) {
+        for (RecBatch batch : state.getBatches()) {
             batchIndex++;
             long batchStart = System.currentTimeMillis();
 
-            batch.probs = runRecBatchWithRetry(batch.chwList, state.recHeight, batch.batchWidth, 0);
-            totalSamples += batch.probs.length;
+            batch.setProbs(runRecBatchWithRetry(batch.getChwList(), state.getRecHeight(), batch.getBatchWidth(), 0));
+            totalSamples += batch.getProbs().length;
 
             long batchElapsed = System.currentTimeMillis() - batchStart;
             log.info("Recognition parse batch {}/{} done, batchSize: {}, batchWidth: {}, elapsed: {} ms",
-                    batchIndex, state.batches.size(), batch.boxes.size(), batch.batchWidth, batchElapsed);
+                    batchIndex, state.getBatches().size(), batch.getBoxes().size(), batch.getBatchWidth(), batchElapsed);
         }
 
         long elapsed = System.currentTimeMillis() - startTime;
         log.info("Recognition parse done, totalBatches: {}, totalSamples: {}, elapsed: {} ms",
-                state.batches.size(), totalSamples, elapsed);
+                state.getBatches().size(), totalSamples, elapsed);
     }
 
     private List<TextBox> postprocess(RecState state) {
         long startTime = System.currentTimeMillis();
-        List<TextBox> decodedBoxes = new ArrayList<>(state.originalOrder.size());
+        List<TextBox> decodedBoxes = new ArrayList<>(state.getOriginalOrder().size());
 
-        for (RecBatch batch : state.batches) {
-            for (int i = 0; i < batch.boxes.size(); i++) {
-                TextBox box = batch.boxes.get(i);
-                ctcDecode(box, batch.probs[i]);
+        for (RecBatch batch : state.getBatches()) {
+            for (int i = 0; i < batch.getBoxes().size(); i++) {
+                TextBox box = batch.getBoxes().get(i);
+                ctcDecode(box, batch.getProbs()[i]);
                 decodedBoxes.add(box);
             }
         }
 
         Map<TextBox, Integer> orderMap = new IdentityHashMap<>();
-        for (int i = 0; i < state.originalOrder.size(); i++) {
-            orderMap.put(state.originalOrder.get(i), i);
+        for (int i = 0; i < state.getOriginalOrder().size(); i++) {
+            orderMap.put(state.getOriginalOrder().get(i), i);
         }
         decodedBoxes.sort(Comparator.comparingInt(box -> orderMap.getOrDefault(box, Integer.MAX_VALUE)));
 
@@ -301,29 +303,7 @@ public class RecProcessor {
         box.setRecText(sb.toString().trim());
         box.setRecConfidence(confCount > 0 ? (confSum / confCount) : 0.0f);
     }
-
-    private static final class RecState {
-        private final List<TextBox> originalOrder;
-        private final List<RecBatch> batches;
-        private final int recHeight;
-
-        private RecState(List<TextBox> originalOrder, List<RecBatch> batches, int recHeight) {
-            this.originalOrder = originalOrder;
-            this.batches = batches;
-            this.recHeight = recHeight;
-        }
-    }
-
-    private static final class RecBatch {
-        private final List<TextBox> boxes;
-        private final List<float[]> chwList;
-        private final int batchWidth;
-        private float[][][] probs;
-
-        private RecBatch(List<TextBox> boxes, List<float[]> chwList, int batchWidth) {
-            this.boxes = boxes;
-            this.chwList = chwList;
-            this.batchWidth = batchWidth;
-        }
-    }
 }
+
+
+

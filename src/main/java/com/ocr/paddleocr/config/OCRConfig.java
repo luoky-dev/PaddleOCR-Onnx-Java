@@ -61,7 +61,7 @@ public class OCRConfig implements Serializable {
     private int detMinSize = 5;
     // 是否返回多边形（false返回矩形）
     @Builder.Default
-    private boolean detUsePolygon = true;
+    private boolean detUsePolygon = false;
 
     // ==================== 方向分类参数 ====================
 

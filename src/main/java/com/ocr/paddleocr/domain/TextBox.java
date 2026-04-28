@@ -5,7 +5,6 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.opencv.core.Mat;
-import org.opencv.core.MatOfPoint;
 import org.opencv.core.Point;
 
 import java.util.List;
@@ -17,9 +16,9 @@ import java.util.List;
 public class TextBox {
 
     /**
-     * 坐标还原前轮廓图像信息
+     * 文本框顺序
      */
-    private MatOfPoint contourMat;
+    private int index;
 
     /**
      * 坐标还原前轮廓顶点

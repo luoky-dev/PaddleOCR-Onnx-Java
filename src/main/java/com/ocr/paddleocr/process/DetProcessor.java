@@ -47,7 +47,7 @@ public class DetProcessor {
         context.setDetProcessTime(System.currentTimeMillis() - startTime);
     }
 
-    private void preprocess(OCRContext context) {
+    private void preprocess(OCRContext context) throws OrtException {
         long startTime = System.currentTimeMillis();
         // 获取原始图像尺寸
         Mat raw = context.getRawMat();
@@ -56,7 +56,7 @@ public class DetProcessor {
         int dstW;
         int dstH;
         log.debug("原始图像尺寸: {}x{}", srcW, srcH);
-        if (!OnnxUtil.isDynamicInput(modelManager.getDetSession())) {
+        if (!OnnxUtil.isDynamicImageInput(modelManager.getDetSession())) {
             // 固定输入模型: 严格按模型声明尺寸送入
             dstH = ocrConfig.getDetModelHeight();
             dstW = ocrConfig.getDetModelWidth();
@@ -293,7 +293,6 @@ public class DetProcessor {
 
             TextBox box = TextBox.builder()
                     .contourPoint(contourPoint)
-                    .contourMat(contour)
                     .restorePoints(restorePoints)
                     .restoreMat(restoreMat)
                     .build();

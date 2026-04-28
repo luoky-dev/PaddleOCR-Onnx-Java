@@ -177,13 +177,11 @@ public class OCRServiceImpl {
                         .build();
             }
             List<Word> words = new ArrayList<>();
-            if (context.getRecResultBoxes() != null) {
-                context.getRecResultBoxes().forEach(textBox -> words.add(Word.builder()
-                        .text(textBox.getRecText())
-                        .confidence(textBox.getRecConfidence())
-                        .box(textBox.getRestorePoints())
-                        .build()));
-            }
+            context.getRecResultBoxes().forEach(textBox -> words.add(Word.builder()
+                    .text(textBox.getRecText())
+                    .confidence(textBox.getRecConfidence())
+                    .box(textBox.getRestorePoints())
+                    .build()));
 
             return builder
                     .success(Boolean.TRUE)
@@ -227,9 +225,6 @@ public class OCRServiceImpl {
             context.setClsBatchChw(null);
             context.setClsLogitsList(null);
             context.setClsResultBoxes(null);
-            context.setRecBatchBoxes(null);
-            context.setRecBatchChw(null);
-            context.setRecProbsList(null);
             context.setRecResultBoxes(null);
         }
     }
@@ -242,10 +237,8 @@ public class OCRServiceImpl {
             if (box == null || !visited.add(box)) {
                 continue;
             }
-            OpenCVUtil.releaseMat(box.getContourMat());
             OpenCVUtil.releaseMat(box.getRestoreMat());
             OpenCVUtil.releaseMat(box.getRotMat());
-            box.setContourMat(null);
             box.setContourPoint(null);
             box.setRestoreMat(null);
             box.setRestorePoints(null);
