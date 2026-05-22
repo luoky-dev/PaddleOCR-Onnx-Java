@@ -13,6 +13,7 @@ import com.ocr.paddleocr.utils.OnnxUtil;
 import com.ocr.paddleocr.utils.OpenCVUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.opencv.core.Mat;
+import org.opencv.core.Size;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -66,6 +67,7 @@ public class RecProcessor {
     private RecState preprocess(List<TextBox> sourceBoxes) throws OrtException {
         long startTime = System.currentTimeMillis();
         boolean dynamicWidth = OnnxUtil.isDynamicWithInput(modelManager.getRecSession());
+        long[] modelInput = OnnxUtil.getModelInputShape(modelManager.getRecSession());
         int batchSize = ocrConfig.getBatchSize();
         int recHeight = modelConfig.getRecModelHeight();
         int fixedRecWidth = modelConfig.getRecModelWith();
@@ -167,7 +169,7 @@ public class RecProcessor {
         }
 
         int rawWidth = (int) Math.ceil(recHeight * maxRatio);
-        return alignWidth(Math.max(modelConfig.getResizeAlign(), rawWidth), modelConfig.getResizeAlign());
+        return alignWidth(Math.max(modelConfig.getDetStride(), rawWidth), modelConfig.getDetStride());
     }
 
     private int alignWidth(int width, int align) {
@@ -192,7 +194,7 @@ public class RecProcessor {
         if (box.getRotMat() != null && !box.getRotMat().empty()) {
             return box.getRotMat();
         }
-        return box.getRestoreMat();
+        return box.getCropMat();
     }
 
     private float[][][] runRecBatchWithRetry(List<float[]> chwList,
@@ -202,9 +204,7 @@ public class RecProcessor {
         try (OnnxTensor input = OnnxUtil.createBatchInputTensor(
                 chwList,
                 modelManager.getEnv(),
-                3,
-                recHeight,
-                recWidth
+                new Size(modelConfig.getRecModelWith(),modelConfig.getRecModelHeight())
         );
              OrtSession.Result output = modelManager.getRecSession()
                      .run(Collections.singletonMap("x", input))) {

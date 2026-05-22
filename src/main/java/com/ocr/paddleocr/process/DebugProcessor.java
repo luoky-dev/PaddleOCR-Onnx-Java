@@ -23,7 +23,6 @@ public class DebugProcessor {
         OpenCVUtil.ensureDir(debugPath);
 
         safeRun("det_boxes", () -> printDetBoxesImage(context, debugPath));
-        safeRun("det_prep", () -> printDetPrepImage(context, debugPath));
         safeRun("det_prob_heatmap", () -> printDetProbHeatmapImage(context, debugPath));
         safeRun("det_binary_map", () -> printDetBinaryMapImage(context, config, debugPath));
         safeRun("det_contours", () -> printContourImages(context, debugPath));
@@ -40,23 +39,12 @@ public class DebugProcessor {
         // 收集所有检测框的顶点坐标
         List<List<Point>> detectBoxes = new ArrayList<>();
         if (context.getDetResultBoxes() != null) {
-            context.getDetResultBoxes().forEach(box -> detectBoxes.add(box.getRestorePoints()));
+            context.getDetResultBoxes().forEach(box -> detectBoxes.add(box.getPoints()));
         }
         // 在原图上绘制
         Mat detectImage = OpenCVUtil.drawBoxes(context.getRawMat(), detectBoxes);
         OpenCVUtil.saveImageAndRelease(detectImage,debugPath + "/det_boxes.jpg");
         log.debug("已保存检测框图, 文件名: det_boxes.jpg, 文件路径: {}", debugPath);
-    }
-
-    /**
-     * 检测预处理后的图像
-     * 用途：查看输入检测模型的图像（缩放、归一化后的效果）
-     */
-    public static void printDetPrepImage(OCRContext context, String debugPath) {
-        // 将预处理图像转换为可视化的8UC3格式
-        Mat vis = OpenCVUtil.toVisualizableImage(context.getDetPrepMat(), true);
-        OpenCVUtil.saveImageAndRelease(vis,debugPath + "/det_prep.jpg");
-        log.debug("已保存检测预处理后的图像, 文件名: det_prep.jpg, 文件路径: {}", debugPath);
     }
 
     /**
@@ -95,25 +83,16 @@ public class DebugProcessor {
      */
     public static void printContourImages(OCRContext context, String debugPath) {
         // 收集轮廓点
-        List<List<Point>> contourPoints = new ArrayList<>();
         List<List<Point>> restorePoints = new ArrayList<>();
         if (context.getDetResultBoxes() != null) {
             for (TextBox box : context.getDetResultBoxes()) {
                 if (box == null) {
                     continue;
                 }
-                // 原轮廓点
-                contourPoints.add(box.getContourPoint());
                 // 还原后的点
-                restorePoints.add(box.getRestorePoints());
+                restorePoints.add(box.getPoints());
             }
         }
-        // 在预处理图上绘制
-        Mat prepVis = OpenCVUtil.toVisualizableImage(context.getDetPrepMat(), true);
-        Mat prepContour = OpenCVUtil.drawBoxes(prepVis, contourPoints);
-        OpenCVUtil.saveImageAndRelease(prepContour, debugPath + "/det_crops_prep.jpg");
-        log.debug("已保存原始轮廓图像, 文件名: det_crops_prep.jpg, 文件路径: {}", debugPath);
-        OpenCVUtil.releaseMat(prepVis);
         // 在原图上绘制
         Mat restoreContour = OpenCVUtil.drawBoxes(context.getRawMat(), restorePoints);
         OpenCVUtil.saveImageAndRelease(restoreContour, debugPath + "/det_crops_restore.jpg");
@@ -134,11 +113,11 @@ public class DebugProcessor {
         // 逐个保存裁剪图
         int idx = 0;
         for (TextBox box : context.getDetResultBoxes()) {
-            if (box == null || box.getRestoreMat() == null || box.getRestoreMat().empty()) {
+            if (box == null || box.getCropMat() == null || box.getCropMat().empty()) {
                 continue;
             }
             String file = String.format(Locale.ROOT, "%s/det_crop_%03d.jpg", cropDir, idx++);
-            OpenCVUtil.saveImage(box.getRestoreMat(), file);
+            OpenCVUtil.saveImage(box.getCropMat(), file);
         }
         log.debug("已保存每个检测框的裁剪图像, 裁剪文件个数: {}, 文件路径: {}", context.getDetResultBoxes().size(), cropDir);
     }
@@ -158,11 +137,11 @@ public class DebugProcessor {
 
         int idx = 0;
         for (TextBox box : context.getClsResultBoxes()) {
-            if (box == null || box.getRestoreMat() == null || box.getRestoreMat().empty()) {
+            if (box == null || box.getCropMat() == null || box.getCropMat().empty()) {
                 continue;
             }
             // 原始图像（旋转前）
-            Mat before = OpenCVUtil.toVisualizableImage(box.getRestoreMat(), false);
+            Mat before = OpenCVUtil.toVisualizableImage(box.getCropMat(), false);
             // 旋转后图像（如果有旋转）
             Mat after = OpenCVUtil.toVisualizableImage(box.getRotMat(), false);
             if (before.empty() || after.empty()) {
@@ -209,11 +188,11 @@ public class DebugProcessor {
         Mat overlay = context.getRawMat().clone();
         if (context.getRecResultBoxes() != null) {
             for (TextBox box : context.getRecResultBoxes()) {
-                if (box == null || box.getRestorePoints() == null || box.getRestorePoints().size() < 3) {
+                if (box == null || box.getPoints() == null || box.getPoints().size() < 3) {
                     continue;
                 }
                 // 绘制检测框
-                OpenCVUtil.drawPolygon(overlay, box.getRestorePoints());
+                OpenCVUtil.drawPolygon(overlay, box.getPoints());
                 // 准备文字标签
                 String recText = Objects.toString(box.getRecText(), "");
                 if (recText.length() > 24) {
@@ -221,7 +200,7 @@ public class DebugProcessor {
                 }
                 String label = String.format(Locale.ROOT, "%s(%.3f)", recText, box.getRecConfidence());
                 // 在文本框左上角添加文字
-                Point anchor = box.getRestorePoints().get(0);
+                Point anchor = box.getPoints().get(0);
                 OpenCVUtil.drawText(overlay, label, new Point(anchor.x, Math.max(15, anchor.y - 3)));
             }
         }

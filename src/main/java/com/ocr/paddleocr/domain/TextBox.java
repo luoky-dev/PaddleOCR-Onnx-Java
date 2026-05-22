@@ -16,24 +16,24 @@ import java.util.List;
 public class TextBox {
 
     /**
-     * 文本框顺序
+     * 检测框顺序
      */
     private int index;
 
     /**
-     * 坐标还原前轮廓顶点
+     * 宽高比, 用于cls和rec模型批量输入
      */
-    private List<Point> contourPoint;
+    private double aspectRatio;
 
     /**
-     * 坐标还原后图像信息
+     * 顶点, 检测到的四边形检测框顶点
      */
-    private Mat restoreMat;
+    private List<Point> points;
 
     /**
-     * 坐标还原后顶点
+     * 透视变换裁剪后的矩形检测框图像
      */
-    private List<Point> restorePoints;
+    private Mat cropMat;
 
     /**
      * 分类模型处理旋转后图像信息

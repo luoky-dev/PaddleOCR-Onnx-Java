@@ -5,6 +5,7 @@ import ai.onnxruntime.OrtException;
 import ai.onnxruntime.OrtSession.Result;
 import com.ocr.paddleocr.config.ModelConfig;
 import com.ocr.paddleocr.config.OCRConfig;
+import com.ocr.paddleocr.domain.ClsBatch;
 import com.ocr.paddleocr.domain.OCRContext;
 import com.ocr.paddleocr.domain.TextBox;
 import com.ocr.paddleocr.utils.OnnxUtil;
@@ -12,10 +13,9 @@ import com.ocr.paddleocr.utils.OpenCVUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
+import org.opencv.core.Size;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 @Slf4j
 public class ClsProcessor {
@@ -28,25 +28,15 @@ public class ClsProcessor {
         this.modelManager = modelManager;
         this.ocrConfig = modelManager.getOcrConfig();
         this.modelConfig = modelManager.getModelConfig();
-        log.debug("ClsProcessor初始化完成, 分类模型路径: {}, 批量大小: {}, 方向分类模型输入高宽: {}x{}",
-                ocrConfig.getClsModelPath(),
-                ocrConfig.getBatchSize(),
-                modelConfig.getClsModelHeight(),
-                modelConfig.getClsModelWith());
     }
 
     public void classify(OCRContext context) throws OrtException {
+        log.info("开始分类检测");
         long startTime = System.currentTimeMillis();
-        // 检查是否有文本框需要处理
-        if (context.getDetResultBoxes() == null || context.getDetResultBoxes().isEmpty()) {
-            log.warn("分类处理跳过：检测结果为空");
-            context.setClsProcessTime(System.currentTimeMillis() - startTime);
-            return;
-        }
         // 预处理
-        preprocess(context);
+        List<ClsBatch> clsState = preprocess(context.getDetResultBoxes());
         // 模型解析
-        parse(context);
+        parse(clsState);
         // 后处理
         postprocess(context);
         // 计算运行时间
@@ -54,129 +44,88 @@ public class ClsProcessor {
     }
 
     /**
-     * 预处理：将检测框图像分批转换为模型输入格式
+     * 预处理: 将检测框图像分批转换为模型输入格式
      */
-    private void preprocess(OCRContext context) {
+    private List<ClsBatch> preprocess(List<TextBox> detBoxes) throws OrtException {
+        log.info("分类检测 - 预处理阶段");
         long startTime = System.currentTimeMillis();
-        List<TextBox> detBoxes = context.getDetResultBoxes();
+        // cls模型输入形状和检测框
+        long[] modelInputShape = OnnxUtil.getModelInputShape(modelManager.getClsSession());
+        log.debug("方向分类模型输入形状(-1代表动态输入): Batch: {} x Channel: {} x Height:{} x Width:{} ",
+                modelInputShape[0], modelInputShape[1], modelInputShape[2], modelInputShape[3]);
+        // 总数和批量大小
         int batchSize = ocrConfig.getBatchSize();
-        int totalBoxes = detBoxes.size();
-        int actualBatchSize = Math.min(batchSize, totalBoxes);
-
-        log.debug("分类预处理开始, 总文本框: {}, 配置批量大小: {}, 实际批量大小: {}",
-                totalBoxes, batchSize, actualBatchSize);
-
-        List<List<TextBox>> clsBatchBoxes = new ArrayList<>();
-        List<List<float[]>> clsBatchChw = new ArrayList<>();
-
+        log.debug("检测框数量: {}, 批量处理大小: {}, 总批次: {}", detBoxes.size(), batchSize, (detBoxes.size() + batchSize - 1) / batchSize);
+        // 确定模型输入尺寸
+        int modelInputH = Math.toIntExact(modelInputShape[2] != -1 ? modelInputShape[2] : modelConfig.getClsModelHeight());
+        int modelInputW = Math.toIntExact(modelInputShape[3] != -1 ? modelInputShape[3] : modelConfig.getClsModelWith());
+        log.debug("模型输入图像尺寸: H:{} x W:{} ", modelInputH, modelInputW);
+        // 按batch简单分组
+        List<ClsBatch> clsBatches = new ArrayList<>();
         int batchCount = 0;
-        int processedCount = 0;
-
-        // 按批量处理数量分组
-        for (int begin = 0; begin < totalBoxes; begin += batchSize) {
-            int end = Math.min(begin + batchSize, totalBoxes);
-            List<TextBox> batch = detBoxes.subList(begin, end);
-            batchCount++;
-
-            log.debug("处理第 {}/{} 批, 本批文本框数: {}", batchCount,
-                    (totalBoxes + batchSize - 1) / batchSize, batch.size());
-
-            // 每一批缩放归一化到chw的模型要求输入格式
+        for (int batchBegin = 0; batchBegin < detBoxes.size(); batchBegin += batchSize) {
+            batchCount ++;
+            // 分组
+            int batchEnd = Math.min(batchBegin + batchSize, detBoxes.size());
+            List<TextBox> batchBoxes = detBoxes.subList(batchBegin, batchEnd);
+            log.debug("分组预处理第 {} 批, 本批检测框数量: {}", batchCount, batchBoxes.size());
+            // 当前批次检测框直接缩放归一到模型输入尺寸
             List<float[]> chwList = new ArrayList<>();
-            int validCount = 0;
-
-            for (int i = 0; i < batch.size(); i++) {
-                TextBox box = batch.get(i);
-                Mat src = box.getRestoreMat();
-
-                if (src == null || src.empty()) {
-                    log.warn("第{}批第{}个文本框图像为空，使用零填充", batchCount, i);
-                    chwList.add(new float[3 * modelConfig.getClsModelHeight() * modelConfig.getClsModelWith()]);
-                    continue;
-                }
-
-                // 日志输出图像尺寸（调试用）
-                if (log.isDebugEnabled()) {
-                    log.debug("文本框图像尺寸: {}x{}, 通道数: {}",
-                            src.cols(), src.rows(), src.channels());
-                }
-
-                // 缩放归一化
-                float[] chwData = OpenCVUtil.resizeNormalize(src,
-                        modelConfig.getClsModelHeight(),
-                        modelConfig.getClsModelWith());
+            for (TextBox textBox : batchBoxes) {
+                // 缩放和转换转换RGB通道
+                Mat rgbMat = OpenCVUtil.resizeToRGB(textBox.getCropMat(),new Size(modelInputW, modelInputH));
+                log.debug("图像缩放完成: H:{} x W:{} -> H:{} x W:{}",
+                        textBox.getCropMat().height(), textBox.getCropMat().width(), rgbMat.height(), rgbMat.width());
+                // 归一化并转换CHW格式
+                float[] chwData = OpenCVUtil.normalizeToCHW(rgbMat, modelConfig.getLinearMean(), modelConfig.getLinearStd());
+                log.debug("图像归一标准化完成, 均值: {}, 标准差: {}",
+                        Arrays.toString(modelConfig.getLinearMean()),
+                        Arrays.toString(modelConfig.getLinearStd()));
                 chwList.add(chwData);
-                validCount++;
+                // 资源释放
+                OpenCVUtil.releaseMat(rgbMat);
             }
-
-            log.debug("第{}批预处理完成, 有效图像: {}/{}", batchCount, validCount, batch.size());
-
-            clsBatchBoxes.add(batch);
-            clsBatchChw.add(chwList);
-            processedCount += batch.size();
+            clsBatches.add(ClsBatch.builder().
+                    chwList(chwList).
+                    modelInputSize(new Size(modelInputW, modelInputH)).
+                    boxes(batchBoxes)
+                    .build());
         }
-
-        context.setClsBatchBoxes(clsBatchBoxes);
-        context.setClsBatchChw(clsBatchChw);
-
-        long elapsed = System.currentTimeMillis() - startTime;
-        log.debug("分类预处理完成, 总批次数: {}, 处理文本框: {}, 耗时: {} ms",
-                batchCount, processedCount, elapsed);
+        log.debug("分类检测预处理完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
+        return clsBatches;
     }
 
     /**
      * 模型推理：分批执行ONNX推理
      */
-    private void parse(OCRContext context) throws OrtException {
+    private void parse(List<ClsBatch> clsBatches) throws OrtException {
+        log.info("分类检测 - 模型推理阶段");
         long startTime = System.currentTimeMillis();
-        List<List<float[]>> clsBatchChw = context.getClsBatchChw();
-        int totalBatches = clsBatchChw.size();
-
-        log.debug("分类模型推理开始, 总批次数: {}", totalBatches);
-
-        List<float[][]> logitsList = new ArrayList<>();
-        int batchIndex = 0;
-
-        for (List<float[]> chwList : clsBatchChw) {
-            batchIndex++;
-            long batchStartTime = System.currentTimeMillis();
-
-            log.debug("执行第 {}/{} 批推理, 本批样本数: {}", batchIndex, totalBatches, chwList.size());
-
-            // 模型输出
-            try (OnnxTensor input = OnnxUtil.createBatchInputTensor(chwList,
-                    modelManager.getEnv(),
-                    3,
-                    modelConfig.getClsModelHeight(),
-                    modelConfig.getClsModelWith());
+        int batchCount = 0;
+        for (ClsBatch clsBatch : clsBatches) {
+            batchCount ++;
+            // 模型解析输入
+            List<float[]> chwList = clsBatch.getChwList();
+            // 模型解析
+            try (OnnxTensor input = OnnxUtil.createBatchInputTensor(chwList, modelManager.getEnv(), clsBatch.getModelInputSize());
                  Result output = modelManager.getClsSession().run(Collections.singletonMap("x", input))) {
-
-                // 模型解析
-                float[][] logits = OnnxUtil.parseClsOutput(output);
-                logitsList.add(logits);
-
-                long batchElapsed = System.currentTimeMillis() - batchStartTime;
-                log.debug("第{}批推理完成, 耗时: {} ms, 输出形状: {}x{}",
-                        batchIndex, batchElapsed, logits.length, logits[0].length);
+                // 模型输出
+                float[][] probVector = OnnxUtil.parseClsOutput(output);
+                clsBatch.setProbVector(probVector);
+                log.info("模型推理第 {} 批完成, 本批检测框数量: {}, 方向类别数量: {}", batchCount, probVector.length, probVector[0].length);
             } catch (OrtException e) {
-                log.error("第{}批推理失败", batchIndex, e);
+                log.error("方向分类模型推理失败", e);
                 throw e;
             }
         }
-
-        context.setClsLogitsList(logitsList);
-
-        long elapsed = System.currentTimeMillis() - startTime;
-        log.info("分类模型推理完成, 总批次数: {}, 总样本数: {}, 耗时: {} ms",
-                totalBatches,
-                logitsList.stream().mapToInt(arr -> arr.length).sum(),
-                elapsed);
+        log.info("模型推理阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
     }
 
     /**
      * 后处理：解码输出并执行旋转
      */
     private void postprocess(OCRContext context) {
+        log.info("分类检测 - 后处理检测框旋转纠正阶段");
         long startTime = System.currentTimeMillis();
         List<List<TextBox>> clsBatchBoxes = context.getClsBatchBoxes();
         List<float[][]> logitsList = context.getClsLogitsList();
@@ -239,8 +188,27 @@ public class ClsProcessor {
                 .filter(box -> box.isRotate() && box.getRotAngle() == -90)
                 .count();
 
-        log.info("分类后处理完成, 耗时: {} ms, 总文本框: {}, 旋转: {} (180°: {}, 90°: {}, 270°: {})",
+        log.info("分类后处理完成, 耗时: {} ms, 总检测框: {}, 旋转: {} (180°: {}, 90°: {}, 270°: {})",
                 elapsed, totalBoxes, rotatedCount, rotate180Count, rotate90Count, rotate270Count);
+    }
+
+    /**
+     * 按检测框高度聚类
+     * @param boxes 检测框列表
+     * @param strideSize 分组间隔
+     * @return 按高度分组的Map, Key为高度区间起始值
+     */
+    private Map<Integer,List<TextBox>> heightGroup(List<TextBox> boxes,int strideSize) {
+        Map<Integer, List<TextBox>> heightGroups = new HashMap<>();
+        for (TextBox box : boxes) {
+            // 检测框的高度
+            int height = box.getCropMat().height();
+            // 计算分组key, 向上取整到strideSize的倍数
+            int groupKey = ((height + strideSize - 1) / strideSize) * strideSize;
+            // 将检测框添加到对应分组
+            heightGroups.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(box);
+        }
+        return heightGroups;
     }
 
     /**
@@ -297,7 +265,7 @@ public class ClsProcessor {
      */
     private void rotation(TextBox box, int angle) {
         // 从 TextBox 获取裁剪后的图像
-        Mat src = box.getRestoreMat();
+        Mat src = box.getCropMat();
         if (src == null || src.empty()) {
             log.warn("旋转失败: 文本框图像为空, angle={}", angle);
             box.setRotate(false);

@@ -500,6 +500,145 @@ public class OpenCVUtil {
     }
 
     /**
+     * 长边限制和对齐到步长倍数方法
+     * @param srcSize 原图尺寸
+     * @param limitSize 长边限制尺寸
+     * @param strideSize 步长尺寸
+     * @return 缩放尺寸
+     */
+    public static Size longSideLimitToStride(Size srcSize, int limitSize, int strideSize) {
+        int srcW = (int) srcSize.width;
+        int srcH = (int) srcSize.height;
+        // 1. 基于长边计算缩放比例
+        int maxSide = Math.max(srcW, srcH);
+        float scale = maxSide > limitSize ? (float) limitSize / maxSide : 1.0f;
+
+        // 2. 等比例缩放
+        int scaledW = Math.max(Math.round(srcW * scale), 1);
+        int scaledH = Math.max(Math.round(srcH * scale), 1);
+
+        // 3. 向上对齐到指定倍数
+        int dstW = (int) Math.ceil((double) scaledW / strideSize) * strideSize;
+        int dstH = (int) Math.ceil((double) scaledH / strideSize) * strideSize;
+
+        return new Size(dstW, dstH);
+    }
+
+    /**
+     * 等比例缩放到固定高度
+     * @param srcSize 原始尺寸 (width, height)
+     * @param targetHeight 目标高度
+     * @return 缩放后的尺寸
+     */
+    public static Size getFixHeightSize(Size srcSize, int targetHeight) {
+        int srcW = (int) srcSize.width;
+        int srcH = (int) srcSize.height;
+        // 计算缩放比例
+        float scale = (float) targetHeight / srcH;
+        // 计算缩放后的宽度
+        int targetWidth = Math.round(srcW * scale);
+        return new Size(targetWidth, targetHeight);
+    }
+
+    /**
+     * 将图像缩放到目标宽高并转换RGB通道
+     * @param mat 原图
+     * @param dstSize 目标尺寸
+     * @return mat 缩放转换RGB通道后的图像
+     */
+    public static Mat resizeToRGB(Mat mat, Size dstSize) {
+        // 缩放图像，使用双线性插值，保持图像内容不变形
+        Mat resized = new Mat();
+        Imgproc.resize(mat, resized, dstSize);
+        // 转换RGB通道
+        Mat rgb = new Mat();
+        Imgproc.cvtColor(resized, rgb, Imgproc.COLOR_BGR2RGB);
+        // 释放资源
+        releaseMat(resized);
+        return rgb;
+    }
+
+    /**
+     * 图像填充, 左上对齐
+     * @param mat 原图像
+     * @param dstSize 目标尺寸
+     * @return 填充后图像
+     */
+    public static Mat padding(Mat mat, Size dstSize){
+        if (mat.width() > dstSize.width || mat.height() > dstSize.height) {
+            return mat;
+        }
+        // 创建目标尺寸的黑色背景
+        Mat result = new Mat(dstSize, mat.type());
+        result.setTo(new Scalar(0, 0, 0));
+        // 左上对齐放置
+        Rect roi = new Rect(0, 0, mat.width(), mat.height());
+        Mat roiMat = result.submat(roi);
+        mat.copyTo(roiMat);
+        releaseMat(roiMat);
+        return result;
+    }
+
+    /**
+     * 通用图像归一化转换CHW格式方法
+     * @param mat 缩放转换RGB通道后的图像
+     * @param mean 均值
+     * @param std 标准差
+     * @return CHW格式的float数组
+     */
+    public static float[] normalizeToCHW(Mat mat, float[] mean, float[] std) {
+        int height = mat.rows();
+        int width = mat.cols();
+        int channels = mat.channels();
+        // 1. 归一化到 [0,1]
+        Mat floatMat = new Mat();
+        mat.convertTo(floatMat, CvType.CV_32FC3, 1.0 / 255.0);
+        // 2. 获取 HWC 格式数据
+        float[] hwc = new float[height * width * channels];
+        floatMat.get(0, 0, hwc);
+        releaseMat(floatMat);
+        // 3. 转换为 CHW 格式并应用归一化
+        float[] chw = new float[channels * height * width];
+        for (int c = 0; c < channels; c++) {
+            for (int h = 0; h < height; h++) {
+                for (int w = 0; w < width; w++) {
+                    int chwIdx = (c * height + h) * width + w;
+                    int hwcIdx = (h * width + w) * channels + c;
+                    // 应用归一化公式
+                    chw[chwIdx] = (hwc[hwcIdx] - mean[c]) / std[c];
+                }
+            }
+        }
+        return chw;
+    }
+
+    /**
+     * Mat转换为指定高宽的CHW[channel,height,width]格式, 并做padding
+     * @param mat
+     * @return
+     */
+    public static float[] matToChw(Mat mat, int height, int width, int channels) {
+        int matChannels = mat.channels();
+        int matHeight = mat.height();
+        int matWidth = mat.width();
+        float[] chwData = new float[matChannels * matHeight * matWidth];
+        // 获取HWC格式数组
+        float[] hwcData = new float[height * width * channels];
+        mat.get(0, 0, hwcData);
+        // 转换为CHW格式数组
+        for (int c = 0; c < channels; c++) {
+            for (int h = 0; h < height; h++) {
+                for (int w = 0; w < width; w++) {
+                    int chwIndex = (c * height + h) * width + w;
+                    int hwcIndex = (h * width + w) * channels + c;
+                    chwData[chwIndex] = hwcData[hwcIndex];
+                }
+            }
+        }
+        return chwData;
+    }
+
+    /**
      * 按宽高两个缩放比例分别还原坐标到原图坐标
      *
      * @param points 还原前坐标
@@ -524,44 +663,39 @@ public class OpenCVUtil {
     }
 
     /**
+     * 还原检测框坐标到原图尺寸
+     * @param points 当前图像上的顶点坐标
+     * @param resizeSize 当前缩放的图像尺寸 (width, height)
+     * @param originalSize 原始图像尺寸 (width, height)
+     * @return 还原后的坐标（已裁剪到原图范围内）
+     */
+    public static List<Point> restorePoints(List<Point> points, Size resizeSize, Size originalSize) {
+        // 计算缩放比例
+        float scaleX = (float) (originalSize.width / resizeSize.width);
+        float scaleY = (float) (originalSize.height / resizeSize.height);
+
+        List<Point> restored = new ArrayList<>();
+        for (Point p : points) {
+            double x = p.x * scaleX;
+            double y = p.y * scaleY;
+
+            // 裁剪到原图范围内
+            x = Math.max(0, Math.min(x, originalSize.width - 1));
+            y = Math.max(0, Math.min(y, originalSize.height - 1));
+
+            restored.add(new Point(x, y));
+        }
+        return restored;
+    }
+
+    /**
      * 计算轮廓内平均置信度
      *
      * @param contour 轮廓
-     * @param probMap 概率图
+     * @param probMat 概率图
      * @return 平均置信度
      */
-    public static double getScore(MatOfPoint contour, float[][] probMap) {
-        Point[] points = contour.toArray();
-        if (points.length < 3) {
-            return 0.0;
-        }
-
-        int height = probMap.length;
-        int width = probMap[0].length;
-
-        // 创建掩码
-        Mat mask = new Mat(height, width, CvType.CV_8UC1, new Scalar(0));
-        MatOfPoint matOfPoint = new MatOfPoint(points);
-        Imgproc.fillPoly(mask, java.util.Collections.singletonList(matOfPoint), new Scalar(255));
-        releaseMat(matOfPoint);
-
-        // 计算轮廓内像素的平均概率
-        double sum = 0;
-        int count = 0;
-        for (int i = 0; i < height; i++) {
-            for (int j = 0; j < width; j++) {
-                if (mask.get(i, j)[0] > 0) {
-                    sum += probMap[i][j];
-                    count++;
-                }
-            }
-        }
-
-        releaseMat(mask);
-        return count > 0 ? sum / count : 0.0;
-    }
-
-    public static double getScoreFast(MatOfPoint contour, Mat probMat) {
+    public static double getScore(MatOfPoint contour, Mat probMat) {
         if (contour == null || probMat == null || probMat.empty()) {
             return 0.0;
         }
@@ -705,6 +839,7 @@ public class OpenCVUtil {
     }
 
     /**
+     * 概率图转 Mat
      * Mat 资源判空释放
      */
     public static Mat buildProbMat(float[][] probMap) {
@@ -720,6 +855,39 @@ public class OpenCVUtil {
             }
         }
         return mat;
+    }
+
+    /**
+     * 顶点转矩形框
+     */
+    public static Rect toBoundingRect(List<Point> points) {
+        if (points == null || points.size() < 3) {
+            return new Rect(0, 0, 1, 1);
+        }
+        MatOfPoint mat = new MatOfPoint();
+        mat.fromList(points);
+        Rect rect = Imgproc.boundingRect(mat);
+        releaseMat(mat);
+        return rect.width > 0 && rect.height > 0 ? rect : new Rect(0, 0, 1, 1);
+    }
+
+    /**
+     * 从矩形框提取4个顶点（按顺时针顺序）
+     * @param rect 矩形框
+     * @return 4个顶点列表（顺序：左上、右上、右下、左下）
+     */
+    public static List<Point> getRectPoints(Rect rect) {
+        if (rect == null) {
+            return new ArrayList<>();
+        }
+
+        List<Point> points = new ArrayList<>(4);
+        points.add(new Point(rect.x, rect.y));                           // 左上
+        points.add(new Point(rect.x + rect.width, rect.y));              // 右上
+        points.add(new Point(rect.x + rect.width, rect.y + rect.height)); // 右下
+        points.add(new Point(rect.x, rect.y + rect.height));              // 左下
+
+        return points;
     }
 
     public static Mat createProbHeatmap(float[][] probMap) {

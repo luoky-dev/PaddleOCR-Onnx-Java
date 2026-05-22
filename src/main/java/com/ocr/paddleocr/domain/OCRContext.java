@@ -15,24 +15,15 @@ import java.util.List;
 public class OCRContext {
 
     /**
-     * 处理前的图像数据
+     * 处理前的原图像
      */
     private Mat rawMat;
 
     /**
-     * 检测预处理归一化 + 标准化的 RGB 顺序图像
+     * 整图旋转90度后的图像(适用于[0,180]的二分类cls模型)
+     * 当整图检测框宽高比 < 1 的框占比过高会触发整图旋转重新检测
      */
-    private Mat detPrepMat;
-
-    /**
-     * 检测预处理宽度缩放比例（对齐后真实比例）
-     */
-    private float detPrepScaleX;
-
-    /**
-     * 检测预处理高度缩放比例（对齐后真实比例）
-     */
-    private float detPrepScaleY;
+    private Mat rotMat;
 
     /**
      * 检测模型输出的概率图
@@ -48,6 +39,11 @@ public class OCRContext {
      * 检测模型处理时间（毫秒）
      */
     private long detProcessTime;
+
+    /**
+     * cls或rec预处理分组
+     */
+    private List<ClsBatch> clsBatches;
 
     /**
      * 分类检测分批处理检测框

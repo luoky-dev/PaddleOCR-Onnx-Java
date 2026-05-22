@@ -9,6 +9,7 @@ import ai.onnxruntime.OrtSession;
 import ai.onnxruntime.OrtSession.Result;
 import ai.onnxruntime.TensorInfo;
 import org.opencv.core.Mat;
+import org.opencv.core.Size;
 
 import java.nio.FloatBuffer;
 import java.util.List;
@@ -114,16 +115,21 @@ public class OnnxUtil {
      */
     public static OnnxTensor createBatchInputTensor(List<float[]> chwList,
                                                     OrtEnvironment env,
-                                                    int channels,
-                                                    int height,
-                                                    int width) throws OrtException {
+                                                    Size modelInputSize) throws OrtException {
         int batch = chwList.size();
+        int channels = 3;
+        int height = (int) modelInputSize.height;
+        int width = (int) modelInputSize.width;
         float[] data = new float[batch * channels * height * width];
         int one = channels * height * width;
         for (int i = 0; i < batch; i++) {
             System.arraycopy(chwList.get(i), 0, data, i * one, one);
         }
         long[] shape = {batch, channels, height, width};
+        return OnnxTensor.createTensor(env, FloatBuffer.wrap(data), shape);
+    }
+
+    public static OnnxTensor createInputTensor(OrtEnvironment env, float[] data, long[] shape) throws OrtException {
         return OnnxTensor.createTensor(env, FloatBuffer.wrap(data), shape);
     }
 

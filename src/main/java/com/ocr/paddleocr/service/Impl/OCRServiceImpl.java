@@ -6,11 +6,7 @@ import com.ocr.paddleocr.domain.OCRContext;
 import com.ocr.paddleocr.domain.OCRResult;
 import com.ocr.paddleocr.domain.TextBox;
 import com.ocr.paddleocr.domain.Word;
-import com.ocr.paddleocr.process.ClsProcessor;
-import com.ocr.paddleocr.process.DebugProcessor;
-import com.ocr.paddleocr.process.DetProcessor;
-import com.ocr.paddleocr.process.ModelManager;
-import com.ocr.paddleocr.process.RecProcessor;
+import com.ocr.paddleocr.process.*;
 import com.ocr.paddleocr.utils.OpenCVUtil;
 import lombok.extern.slf4j.Slf4j;
 
@@ -132,7 +128,7 @@ public class OCRServiceImpl {
         try {
             // 读取图片
             context.setRawMat(OpenCVUtil.getImage(imagePath));
-            log.info("开始图像识别");
+            log.info("图片读取成功, 当前图片路径: {}", imagePath);
             // 图像检测和切割
             detProcessor.detect(context);
             if (context.getDetResultBoxes().isEmpty()){
@@ -144,19 +140,21 @@ public class OCRServiceImpl {
                         .processingTime(System.currentTimeMillis() - startTime)
                         .build();
             }
-            log.info("检测完成, 检测框数量: {}, 检测处理时间: {} ms",
-                    context.getDetResultBoxes().size(),
-                    context.getDetProcessTime());
+            // 使用透视变换裁剪
+            List<TextBox> detResultBoxes = context.getDetResultBoxes();
+            detResultBoxes.forEach(detResultBox -> detResultBox.setCropMat(
+                    OpenCVUtil.perspectiveTransformCrop(context.getRawMat(), detResultBox.getPoints())));
+            log.info("检测框裁剪完成");
             // 启用分类检测时进行分类检测和纠正
-            log.info("开始角度分类处理, 文本框数量: {}", context.getDetResultBoxes().size());
             if (ocrConfig.isUseCls()) {
+                log.info("方向分类检测已启用");
                 clsProcessor.classify(context);
-                log.info("方向分类已启用, 倾斜框纠正数量: {}, 分类检测处理时间: {} ms",
+                log.info("方向分类检测纠正已完成, 倾斜框纠正数量: {}, 分类检测处理时间: {} ms",
                         context.getClsResultBoxes().stream().filter(TextBox::isRotate).count(),
                         context.getClsProcessTime()
                 );
             } else {
-                log.info("方向分类未启用, 将跳过方向分类使用检测模型结果进行识别");
+                log.info("方向分类检测未启用, 将跳过方向分类使用检测模型结果进行识别");
             }
             // 检测框识别
             recProcessor.recognize(context);
@@ -180,7 +178,7 @@ public class OCRServiceImpl {
             context.getRecResultBoxes().forEach(textBox -> words.add(Word.builder()
                     .text(textBox.getRecText())
                     .confidence(textBox.getRecConfidence())
-                    .box(textBox.getRestorePoints())
+                    .box(textBox.getPoints())
                     .build()));
 
             return builder
@@ -212,13 +210,11 @@ public class OCRServiceImpl {
             releaseTextBoxes(context.getClsResultBoxes(), visited);
             releaseTextBoxes(context.getRecResultBoxes(), visited);
 
-            OpenCVUtil.releaseMat(context.getDetPrepMat());
             OpenCVUtil.releaseMat(context.getRawMat());
         } catch (Exception e) {
             log.warn("释放OCR上下文资源失败", e);
         } finally {
             context.setRawMat(null);
-            context.setDetPrepMat(null);
             context.setDetProbMap(null);
             context.setDetResultBoxes(null);
             context.setClsBatchBoxes(null);
@@ -237,11 +233,10 @@ public class OCRServiceImpl {
             if (box == null || !visited.add(box)) {
                 continue;
             }
-            OpenCVUtil.releaseMat(box.getRestoreMat());
+            OpenCVUtil.releaseMat(box.getCropMat());
             OpenCVUtil.releaseMat(box.getRotMat());
-            box.setContourPoint(null);
-            box.setRestoreMat(null);
-            box.setRestorePoints(null);
+            box.setCropMat(null);
+            box.setPoints(null);
             box.setRotMat(null);
         }
     }

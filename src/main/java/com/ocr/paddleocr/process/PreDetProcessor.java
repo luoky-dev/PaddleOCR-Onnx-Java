@@ -121,7 +121,7 @@ public class PreDetProcessor {
         Core.findNonZero(nonWhiteMask, nz);
         Rect content = Imgproc.boundingRect(nz);
 
-        int pad = Math.max(minBorderPaddingPx, modelConfig.getResizeAlign() / 2);
+        int pad = Math.max(minBorderPaddingPx, modelConfig.getDetStride() / 2);
         Rect padded = expandRect(content, pad, width, height);
 
         OpenCVUtil.releaseMat(gray);
@@ -138,11 +138,43 @@ public class PreDetProcessor {
         return new Rect(x1, y1, Math.max(1, x2 - x1), Math.max(1, y2 - y1));
     }
 
+//    private void parse(DetState detState) throws OrtException {
+//        // 模型预检测
+//        float[][] probMap = parse(detState.getDetPrepMat());
+//        // 轮廓检测
+//        List<MatOfPoint> contours = findContours(probMap);
+//        // 轮廓融合
+//        List<List<Point>> contoursPoints = contoursMerge(contours);
+//        List<Rect> rects = new ArrayList<>();
+//        for (List<Point> contour : contoursPoints) {
+//            rects.add(OpenCVUtil.toBoundingRect(contour));
+//        }
+//        List<Rect> overlappingRects = OverlapBoxMerger.mergeOverlapRects(rects);
+//        log.info("融合后检测框数量: {}", overlappingRects.size());
+//        // 坐标还原
+//        float scaleX = detState.getDetPrepScaleX();
+//        float scaleY = detState.getDetPrepScaleY();
+//        int rawW = detState.getRawMat().width();
+//        int rawH = detState.getRawMat().height();
+//
+//        List<List<Point>> overlappingPoints = new ArrayList<>();
+//        overlappingRects.forEach(rect -> {
+//            List<Point> rectPoints = OpenCVUtil.getRectPoints(rect);
+//            List<Point> restorePoints = OpenCVUtil.restorePoints(
+//                    rectPoints, scaleX, scaleY, rawW, rawH);
+//            overlappingPoints.add(restorePoints);
+//        });
+//        // 在原图上绘制
+//        Mat detectImage = OpenCVUtil.drawBoxes(detState.getRawMat(), overlappingPoints);
+//        OpenCVUtil.saveImageAndRelease(detectImage,"src/main/java/resources/test/output/det_boxes1.jpg");
+//
+//    }
+
     /**
      * 根据尺寸切块，保留重叠区域减少边缘漏检。
      */
     private List<TileRegion> buildTileRegions(int width, int height) {
-        int targetSide = Math.max(modelConfig.getDetMaxSideLen(), maxTileSideLen);
+        int targetSide = Math.max(modelConfig.getDetMaxSide(), maxTileSideLen);
         if (width <= targetSide && height <= targetSide) {
             return Collections.singletonList(new TileRegion(
                     new Rect(0, 0, width, height),
@@ -308,7 +340,7 @@ public class PreDetProcessor {
     }
 
     private static Rect toBoundingRect(TextBox box) {
-        List<Point> points = box == null ? null : box.getRestorePoints();
+        List<Point> points = box == null ? null : box.getPoints();
         if (points == null || points.size() < 3) {
             return new Rect(0, 0, 1, 1);
         }
@@ -332,8 +364,8 @@ public class PreDetProcessor {
     }
 
     private static double calcPolygonIoUApprox(TextBox a, TextBox b) {
-        List<Point> pa = a.getRestorePoints();
-        List<Point> pb = b.getRestorePoints();
+        List<Point> pa = a.getPoints();
+        List<Point> pb = b.getPoints();
         if (pa == null || pb == null || pa.size() < 3 || pb.size() < 3) {
             return 0.0d;
         }

@@ -5,13 +5,19 @@ import lombok.Getter;
 @Getter
 public class ModelConfig {
     // 检测模型最大边长（paddleOCR官方默认 960）
-    private final int detMaxSideLen = 960;
+    private final int detMaxSide = 960;
     // 对齐倍数（paddleOCR官方要求 32 的倍数）
-    private final int resizeAlign = 32;
-    // RGB 通道的均值（ImageNet 标准化参数）
-    private final float[] mean = {0.485f, 0.456f, 0.406f};
-    // RGB 通道的标准差（ImageNet 标准化参数）
-    private final float[] std = {0.229f, 0.224f, 0.225f};
+    private final int detStride = 32;
+    // 减均值除方差 (Z-score Normalization)
+    // ImageNet RGB均值
+    private final float[] scoreMean = {0.485f, 0.456f, 0.406f};
+    // ImageNet RGB标准差
+    private final float[] scoreStd = {0.229f, 0.224f, 0.225f};
+    // 线性 (Linear Scaling)
+    // 线性到 [-1,1] RGB均值
+    private final float[] linearMean = {0.5f, 0.5f, 0.5f};
+    // 线性到 [-1,1] RGB标准差
+    private final float[] linearStd = {0.5f, 0.5f, 0.5f};
     // 膨胀核大小（paddleOCR官方默认 3）
     private final int dilateKernelSize = 3;
     // 最大候选框数量
@@ -19,7 +25,7 @@ public class ModelConfig {
     // 官方 epsilon 值
     private final float epsilon = 0.002f;
     // 方向分类模型输入宽度
-    private final int clsModelWith = 192;
+    private final int clsModelWith = 320;
     // 方向分类模型输入高度
     private final int clsModelHeight = 48;
     // 方向四分类（支持垂直文本）

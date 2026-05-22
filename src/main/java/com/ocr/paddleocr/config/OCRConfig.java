@@ -38,9 +38,9 @@ public class OCRConfig implements Serializable {
     private boolean useDebug = false;
     // ==================== 检测模型参数 ====================
 
-    // 是否使用启用预检测(适用图片范围: 大图密集文字、大量白边、大量无有效文本区域)
+    // 是否使用启用再检测(适用图片范围: 整图旋转、大图密集文字、大量白边、大量无有效文本区域)
     @Builder.Default
-    private boolean usePreDet = false;
+    private boolean useRefineDet = false;
     // 识别模型固态输入高度
     @Builder.Default
     private int detModelHeight = 960;
@@ -52,17 +52,20 @@ public class OCRConfig implements Serializable {
     private float detThresh = 0.3f;
     // 是否使用膨胀
     @Builder.Default
-    private boolean isDilation = true;
-    // 框置信度阈值过滤
-    @Builder.Default
-    private float detBoxThresh = 0.5f;
+    private boolean isDilation = false;
     // unclip 扩张比率
     @Builder.Default
     private float detUnclipRatio = 1.3f;
-    // 最小检测框尺寸过滤（px）
+    // 检测框最小尺寸过滤（px）
     @Builder.Default
-    private int detMinSize = 5;
-    // 是否返回多边形（false返回矩形）
+    private int detMinSize = 3;
+    // 检测框最小面积过滤
+    @Builder.Default
+    private int detMinArea = 5;
+    // 检测框最低置信度阈值过滤
+    @Builder.Default
+    private float detBoxThresh = 0.6f;
+    // 是否返回多边形检测框使用多边裁剪（false返回矩形）
     @Builder.Default
     private boolean detUsePolygon = false;
 
@@ -73,7 +76,7 @@ public class OCRConfig implements Serializable {
     private float clsThresh = 0.9f;
     // 检测框分批处理大小
     @Builder.Default
-    private int batchSize = 64;
+    private int batchSize = 6;
 
     // ==================== 系统参数 ====================
 
@@ -128,7 +131,7 @@ public class OCRConfig implements Serializable {
         // 正整数验证
         validatePositive("detModelHeight", detModelHeight, errors);   // 检测模型高度
         validatePositive("detModelWidth", detModelWidth, errors);     // 检测模型宽度
-        validatePositive("detMinSize", detMinSize, errors);           // 最小文本框尺寸
+        validatePositive("detMinSize", detMinSize, errors);           // 最小检测框尺寸
         validatePositive("batchSize", batchSize, errors);             // 批量处理大小
         validatePositive("numThreads", numThreads, errors);           // 线程数
 
