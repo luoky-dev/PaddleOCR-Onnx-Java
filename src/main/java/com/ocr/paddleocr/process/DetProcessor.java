@@ -34,7 +34,7 @@ public class DetProcessor {
     }
 
     public void detect(OCRContext context) throws OrtException {
-        log.info("图像检测");
+        log.info("开始图像检测");
         long startTime = System.currentTimeMillis();
         // 预处理
         DetState detState = preprocess(context.getRawMat());
@@ -46,7 +46,7 @@ public class DetProcessor {
         long elapsed = System.currentTimeMillis() - startTime;
         context.setDetResultBoxes(detResultBoxes);
         context.setDetProcessTime(elapsed);
-        log.info("图像检测完成, 检测框数量: {}, 检测处理时间: {} ms", detResultBoxes.size(), elapsed);
+        log.info("图像检测完成, 耗时: {} ms", elapsed);
     }
 
     private DetState preprocess(Mat rawMat) throws OrtException {
@@ -75,7 +75,7 @@ public class DetProcessor {
         // 如果是固定输入模型需要padding
         Mat paddedMat;
         if (modelInputShape[2] != -1 && modelInputShape[3] != -1) {
-            paddedMat = OpenCVUtil.padding(rawMat, new Size(modelInputShape[3], modelInputShape[2]));
+            paddedMat = OpenCVUtil.padding(rgbMat, new Size(modelInputShape[3], modelInputShape[2]));
             log.debug("图像填充完成: H:{} x W:{} -> H:{} x W:{}",
                     rgbMat.height(), rgbMat.width(), paddedMat.height(), paddedMat.width());
         } else {
@@ -177,8 +177,8 @@ public class DetProcessor {
         // 资源释放
         OpenCVUtil.releaseMat(probMat);
         // 输出统计信息
-        log.info("检测框统计 - 总轮廓框: {}, 有效检测框: {}", contours.size(), index);
-        log.info("过滤统计 - 面积不足过滤: {}, 置信度不足过滤: {}, 周长异常过滤: {}, 最小尺寸过滤: {}, 扩边失败: {}, 多边近似失败: {}",
+        log.debug("检测框统计 - 总轮廓框: {}, 有效检测框: {}", contours.size(), index);
+        log.debug("过滤统计 - 面积不足过滤: {}, 置信度不足过滤: {}, 周长异常过滤: {}, 最小尺寸过滤: {}, 扩边失败: {}, 多边近似失败: {}",
                 areaFilterCount, scoreFilterCount, perimeterFilterCount, sizeFilterCount, expandFilterCount, approxFilterCount);
         log.info("后处理检测框提取阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
         return textBoxes;

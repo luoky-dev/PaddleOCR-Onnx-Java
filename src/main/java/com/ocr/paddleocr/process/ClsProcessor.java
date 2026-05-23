@@ -11,7 +11,6 @@ import com.ocr.paddleocr.domain.TextBox;
 import com.ocr.paddleocr.utils.OnnxUtil;
 import com.ocr.paddleocr.utils.OpenCVUtil;
 import lombok.extern.slf4j.Slf4j;
-import org.opencv.core.Core;
 import org.opencv.core.Mat;
 import org.opencv.core.Size;
 
@@ -34,13 +33,16 @@ public class ClsProcessor {
         log.info("开始分类检测");
         long startTime = System.currentTimeMillis();
         // 预处理
-        List<ClsBatch> clsState = preprocess(context.getDetResultBoxes());
+        List<ClsBatch> clsBatch = preprocess(context.getDetResultBoxes());
         // 模型解析
-        parse(clsState);
+        parse(clsBatch);
         // 后处理
-        postprocess(context);
-        // 计算运行时间
-        context.setClsProcessTime(System.currentTimeMillis() - startTime);
+        List<TextBox> clsResultBoxes = postprocess(clsBatch);
+        // 设置结果
+        long elapsed = System.currentTimeMillis() - startTime;
+        context.setClsResultBoxes(clsResultBoxes);
+        context.setClsProcessTime(elapsed);
+        log.info("分类检测完成, 耗时: {} ms", elapsed);
     }
 
     /**
@@ -91,7 +93,7 @@ public class ClsProcessor {
                     boxes(batchBoxes)
                     .build());
         }
-        log.debug("分类检测预处理完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
+        log.info("分类检测预处理完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
         return clsBatches;
     }
 
@@ -112,7 +114,7 @@ public class ClsProcessor {
                 // 模型输出
                 float[][] probVector = OnnxUtil.parseClsOutput(output);
                 clsBatch.setProbVector(probVector);
-                log.info("模型推理第 {} 批完成, 本批检测框数量: {}, 方向类别数量: {}", batchCount, probVector.length, probVector[0].length);
+                log.debug("模型推理第 {}/{} 批完成, 本批检测框数量: {}, 方向类别数量: {}", batchCount, clsBatches.size(), probVector.length, probVector[0].length);
             } catch (OrtException e) {
                 log.error("方向分类模型推理失败", e);
                 throw e;
@@ -122,74 +124,66 @@ public class ClsProcessor {
     }
 
     /**
-     * 后处理：解码输出并执行旋转
+     * 后处理: 解码输出并执行旋转
      */
-    private void postprocess(OCRContext context) {
+    private List<TextBox> postprocess(List<ClsBatch> clsBatch) {
         log.info("分类检测 - 后处理检测框旋转纠正阶段");
         long startTime = System.currentTimeMillis();
-        List<List<TextBox>> clsBatchBoxes = context.getClsBatchBoxes();
-        List<float[][]> logitsList = context.getClsLogitsList();
-
-        int totalBatches = clsBatchBoxes.size();
-        log.debug("分类后处理开始, 总批次数: {}", totalBatches);
-
+        // 判断模型输出和角度分类字典是否匹配
+        if (clsBatch.get(0).getProbVector()[0].length != modelConfig.getAngleDict().length) {
+            log.error("模型输出与字典类型不匹配, 分类检测后处理失败");
+            throw new RuntimeException("Angle dictionary length is invalid, angle classify decoding failed");
+        }
+        // 按批次解码
+        int batchCount = 0;
         List<TextBox> clsResultBoxes = new ArrayList<>();
-        int rotatedCount = 0;
-        int totalBoxes = 0;
-
-        // 遍历所有批次的检测框
-        for (int i = 0; i < totalBatches; i++) {
-            // 当前批次的文本框
-            List<TextBox> batchBox = clsBatchBoxes.get(i);
+        for (ClsBatch batch : clsBatch) {
+            batchCount ++;
+            log.debug("当前解码处理第 {}/{} 批次, 本批次检测框数量: {}", batchCount, clsBatch.size(), batch.getBoxes().size());
             // 当前批次的模型输出
-            float[][] logits = logitsList.get(i);
-
-            log.debug("处理第{}批后处理, 文本框数: {}, 输出数: {}", i + 1, batchBox.size(), logits.length);
-
-            // 遍历批次内的每个文本框
-            for (int j = 0; j < batchBox.size(); j++) {
+            float[][] probVector = batch.getProbVector();
+            for (int i = 0; i < batch.getBoxes().size(); i++) {
                 // 当前文本框
-                TextBox box = batchBox.get(j);
-                // 解码模型输出
-                int[] decoded = decode(logits[j]);
-                // 预测的角度（0°, 90°, 180°, 270°）
-                int angle = decoded[0];
-                // 预测置信度
-                float score = Float.intBitsToFloat(decoded[1]);
-
+                TextBox box = batch.getBoxes().get(i);
+                // 当前文本框方向分类概率数组
+                String[] decoded = OpenCVUtil.decode(probVector[i], modelConfig.getAngleDict());
+                // 角度
+                int angle = Integer.parseInt(decoded[2]);
+                // 置信度
+                float score = Float.parseFloat(decoded[1]);
+                log.trace("解码当前批次第 {} 个检测框完成, 角度: {}, 置信度: {}, 正常阈值: {}", i, angle, score, ocrConfig.getClsThresh());
+                // 设值
                 box.setAngle(angle);
                 box.setClsConfidence(score);
-                // 判断角度和旋转纠正
-                if (needRotate(angle, score)) {
-                    rotation(box, angle);
-                    if (box.isRotate()) {
-                        rotatedCount++;
-                    }
+                // 旋转纠正图像
+                if (score > ocrConfig.getClsThresh() && angle != 0) {
+                    box.setCropMat(OpenCVUtil.rotate(box.getCropMat(), angle));
+                    box.setRotate(true);
+                    log.trace("当前检测框角度非正向角度且置信度超过阈值, 触发执行旋转纠正操作");
                 } else {
                     box.setRotate(false);
+                    log.trace("当前检测框角度正常或非正向角度置信度过低");
                 }
                 clsResultBoxes.add(box);
             }
-            totalBoxes += batchBox.size();
         }
-
-        context.setClsResultBoxes(clsResultBoxes);
-
-        long elapsed = System.currentTimeMillis() - startTime;
 
         // 统计按角度分组的旋转数量
         long rotate180Count = clsResultBoxes.stream()
-                .filter(box -> box.isRotate() && box.getRotAngle() == 180)
+                .filter(box -> box.isRotate() && box.getAngle() == 180)
                 .count();
         long rotate90Count = clsResultBoxes.stream()
-                .filter(box -> box.isRotate() && box.getRotAngle() == 90)
+                .filter(box -> box.isRotate() && box.getAngle() == 90)
                 .count();
         long rotate270Count = clsResultBoxes.stream()
-                .filter(box -> box.isRotate() && box.getRotAngle() == -90)
+                .filter(box -> box.isRotate() && box.getAngle() == 270)
                 .count();
+        long rotatedCount = rotate180Count + rotate90Count + rotate270Count;
 
-        log.info("分类后处理完成, 耗时: {} ms, 总检测框: {}, 旋转: {} (180°: {}, 90°: {}, 270°: {})",
-                elapsed, totalBoxes, rotatedCount, rotate180Count, rotate90Count, rotate270Count);
+        log.debug("检测框旋转纠正统计: 总检测框数量: {}, 触发旋转纠正检测框数量: {} , 角度统计: 180°: {}, 90°: {}, 270°: {}",
+                clsResultBoxes.size(), rotatedCount, rotate180Count, rotate90Count, rotate270Count);
+        log.info("后处理检测框旋转纠正阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
+        return clsResultBoxes;
     }
 
     /**
@@ -211,99 +205,4 @@ public class ClsProcessor {
         return heightGroups;
     }
 
-    /**
-     * 解码模型输出，获取角度和置信度
-     */
-    private int[] decode(float[] probs) {
-        // 找出最大概率的索引
-        int bestIdx = 0;
-        float best = probs[0];
-        for (int i = 1; i < probs.length; i++) {
-            if (probs[i] > best) {
-                best = probs[i];
-                bestIdx = i;
-            }
-        }
-        // 根据输出维度映射角度
-        int angle;
-        if (probs.length == 2) {
-            // 二分类：[0°, 180°]
-            angle = bestIdx == 1 ? 180 : 0;
-        } else if (bestIdx < modelConfig.getFallbackAngleMap().length) {
-            // 多分类：使用映射表
-            angle = modelConfig.getFallbackAngleMap()[bestIdx];
-        } else {
-            log.warn("未知的分类索引: {}, 使用默认角度0", bestIdx);
-            angle = 0;
-        }
-        // 将概率值通过 floatToIntBits 编码为 int，便于存储
-        return new int[]{angle, Float.floatToIntBits(best)};
-    }
-
-    /**
-     * 判断是否需要旋转
-     */
-    private boolean needRotate(int angle, float score) {
-        // 置信度不足，不旋转
-        if (score < ocrConfig.getClsThresh()) {
-            return false;
-        }
-        // 180度必须旋转
-        if (angle == 180) {
-            return true;
-        }
-        // 90/270度可选旋转
-        boolean needRotate = ocrConfig.isUseCls() && (angle == 90 || angle == 270);
-        if (needRotate && log.isDebugEnabled()) {
-            log.debug("检测到{}度旋转, 启用旋转校正", angle);
-        }
-        return needRotate;
-    }
-
-    /**
-     * 执行图像旋转
-     */
-    private void rotation(TextBox box, int angle) {
-        // 从 TextBox 获取裁剪后的图像
-        Mat src = box.getCropMat();
-        if (src == null || src.empty()) {
-            log.warn("旋转失败: 文本框图像为空, angle={}", angle);
-            box.setRotate(false);
-            return;
-        }
-
-        // 根据角度执行旋转
-        Mat dst = new Mat();
-        String rotateType;
-
-        if (angle == 180) {
-            // 180度旋转（上下颠倒）
-            Core.rotate(src, dst, Core.ROTATE_180);
-            box.setRotAngle(180);
-            rotateType = "180°";
-        } else if (angle == 90) {
-            // 90度顺时针旋转
-            Core.rotate(src, dst, Core.ROTATE_90_CLOCKWISE);
-            box.setRotAngle(90);
-            rotateType = "90°顺时针";
-        } else if (angle == 270) {
-            // 90度逆时针旋转（等价于270度顺时针）
-            Core.rotate(src, dst, Core.ROTATE_90_COUNTERCLOCKWISE);
-            box.setRotAngle(-90);
-            rotateType = "90°逆时针(270°)";
-        } else {
-            log.warn("不支持的旋转角度: {}, 跳过旋转", angle);
-            box.setRotate(false);
-            OpenCVUtil.releaseMat(dst);
-            return;
-        }
-
-        box.setRotMat(dst);
-        box.setRotate(true);
-
-        if (log.isDebugEnabled()) {
-        log.debug("图像旋转完成: {}旋转, 原图尺寸: {}x{}, 旋转后尺寸: {}x{}",
-                rotateType, src.cols(), src.rows(), dst.cols(), dst.rows());
-        }
-    }
 }

@@ -133,6 +133,16 @@ public class OnnxUtil {
         return OnnxTensor.createTensor(env, FloatBuffer.wrap(data), shape);
     }
 
+    public static OnnxTensor createBatchInputTensor(float[] data,
+                                                    int batch,
+                                                    OrtEnvironment env,
+                                                    int channels,
+                                                    int height,
+                                                    int width) throws OrtException {
+        long[] shape = {batch, channels, height, width};
+        return OnnxTensor.createTensor(env, FloatBuffer.wrap(data), shape);
+    }
+
     /**
      * 解析检测模型输出
      */

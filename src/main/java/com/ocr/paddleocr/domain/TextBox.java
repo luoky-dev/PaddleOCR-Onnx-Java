@@ -56,11 +56,6 @@ public class TextBox {
     private boolean isRotate;
 
     /**
-     * 旋转的角度
-     */
-    private int rotAngle;
-
-    /**
      * 识别的文本内容
      */
     private String recText;

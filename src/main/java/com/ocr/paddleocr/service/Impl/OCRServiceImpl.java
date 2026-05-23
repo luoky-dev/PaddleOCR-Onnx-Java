@@ -149,10 +149,6 @@ public class OCRServiceImpl {
             if (ocrConfig.isUseCls()) {
                 log.info("方向分类检测已启用");
                 clsProcessor.classify(context);
-                log.info("方向分类检测纠正已完成, 倾斜框纠正数量: {}, 分类检测处理时间: {} ms",
-                        context.getClsResultBoxes().stream().filter(TextBox::isRotate).count(),
-                        context.getClsProcessTime()
-                );
             } else {
                 log.info("方向分类检测未启用, 将跳过方向分类使用检测模型结果进行识别");
             }
@@ -217,9 +213,6 @@ public class OCRServiceImpl {
             context.setRawMat(null);
             context.setDetProbMap(null);
             context.setDetResultBoxes(null);
-            context.setClsBatchBoxes(null);
-            context.setClsBatchChw(null);
-            context.setClsLogitsList(null);
             context.setClsResultBoxes(null);
             context.setRecResultBoxes(null);
         }

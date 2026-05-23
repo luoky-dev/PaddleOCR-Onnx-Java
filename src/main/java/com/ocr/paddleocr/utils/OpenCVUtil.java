@@ -639,6 +639,59 @@ public class OpenCVUtil {
     }
 
     /**
+     * 获取概率数组中最大概率的数组下标和概率
+     * @param probs 概率数组
+     * @return {index 数组下标, prob 概率}
+     */
+    public static int[] getBestProb(float[] probs){
+        // 找出最大概率的索引
+        int bestIndex = 0;
+        float bestProb = probs[0];
+        for (int i = 1; i < probs.length; i++) {
+            if (probs[i] > bestProb) {
+                bestProb = probs[i];
+                bestIndex = i;
+            }
+        }
+        // 将概率值通过 floatToIntBits 编码为 int 便于存储
+        return new int[]{bestIndex, Float.floatToIntBits(bestProb)};
+    }
+
+    /**
+     * 通用解码方法
+     * 通过概率数组和字典的length一一对应的关系获取最大概率字典值
+     * @param probs 概率数组
+     * @param dict 字典
+     * @return String[]{最大概率索引, 最大概率, 映射字典值}
+     */
+    public static String[] decode(float[] probs, String[] dict) {
+        int bestIndex = 0;
+        float bestProb = probs[0];
+        for (int i = 1; i < probs.length; i++) {
+            if (probs[i] > bestProb) {
+                bestProb = probs[i];
+                bestIndex = i;
+            }
+        }
+        return new String[]{String.valueOf(bestIndex), String.valueOf(bestProb), dict[bestIndex]};
+    }
+
+    public static Mat rotate(Mat srcMat, int angle) {
+        Mat dstMat = new Mat();
+        if (angle == 180) {
+            // 180度旋转
+            Core.rotate(srcMat, dstMat, Core.ROTATE_180);
+        } else if (angle == 90) {
+            // 90度顺时针旋转
+            Core.rotate(srcMat, dstMat, Core.ROTATE_90_CLOCKWISE);
+        } else if (angle == 270) {
+            // 90度逆时针旋转（等价于270度顺时针）
+            Core.rotate(srcMat, dstMat, Core.ROTATE_90_COUNTERCLOCKWISE);
+        }
+        return dstMat;
+    }
+
+    /**
      * 按宽高两个缩放比例分别还原坐标到原图坐标
      *
      * @param points 还原前坐标

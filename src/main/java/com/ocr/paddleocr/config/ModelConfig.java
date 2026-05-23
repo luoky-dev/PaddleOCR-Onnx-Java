@@ -28,7 +28,9 @@ public class ModelConfig {
     private final int clsModelWith = 320;
     // 方向分类模型输入高度
     private final int clsModelHeight = 48;
-    // 方向四分类（支持垂直文本）
+    // 角度分类字典
+    private final String[] angleDict = {"0", "180"};
+    // 方向四分类字典
     private final int[] fallbackAngleMap = {0, 90, 180, 270};
     // 识别模型输入宽度
     private final int recModelWith = 320;

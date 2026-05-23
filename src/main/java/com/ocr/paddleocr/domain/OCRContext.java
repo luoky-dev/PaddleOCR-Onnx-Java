@@ -46,21 +46,6 @@ public class OCRContext {
     private List<ClsBatch> clsBatches;
 
     /**
-     * 分类检测分批处理检测框
-     */
-    private List<List<TextBox>> clsBatchBoxes;
-
-    /**
-     * 分类检测模型分批预处理后的模型输入数据
-     */
-    private List<List<float[]>> clsBatchChw;
-
-    /**
-     * 分类检测模型输出 logits 数组
-     */
-    private List<float[][]> clsLogitsList;
-
-    /**
      * 分类检测模型处理结果检测框
      */
     private List<TextBox> clsResultBoxes;
