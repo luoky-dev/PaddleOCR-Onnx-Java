@@ -30,5 +30,5 @@ public class ClsBatch {
     /**
      * 当前批次的cls分类模型推理结果
      */
-    private float[][] probVector;
+    private float[][] prob;
 }

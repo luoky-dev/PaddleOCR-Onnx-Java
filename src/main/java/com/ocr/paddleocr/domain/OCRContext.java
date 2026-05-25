@@ -20,25 +20,14 @@ public class OCRContext {
     private Mat rawMat;
 
     /**
-     * 整图旋转90度后的图像(适用于[0,180]的二分类cls模型)
-     * 当整图检测框宽高比 < 1 的框占比过高会触发整图旋转重新检测
+     * 图像检测阶段运行状态
      */
-    private Mat rotMat;
+    private DetState detState;
 
     /**
-     * 检测模型输出的概率图
-     */
-    private float[][] detProbMap;
-
-    /**
-     * 检测模型处理结果检测框
+     * 图像检测阶段结果检测框
      */
     private List<TextBox> detResultBoxes;
-
-    /**
-     * 检测模型处理时间（毫秒）
-     */
-    private long detProcessTime;
 
     /**
      * cls或rec预处理分组

@@ -12,20 +12,20 @@ import java.util.List;
 @Data
 @Builder
 @AllArgsConstructor
-public final class RecState {
+public class RecState {
 
     /**
      * 原始顺序, 保证识别结果顺序
      */
-    private final List<TextBox> originalOrder;
+    private List<TextBox> originalOrder;
 
     /**
      * 所有检测框识别批次
      */
-    private final List<RecBatch> batches;
+    private List<RecBatch> batches;
 
     /**
      * Rec模型输入固定高度
      */
-    private final int recHeight;
+    private int recHeight;
 }

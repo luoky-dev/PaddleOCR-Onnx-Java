@@ -206,7 +206,6 @@ public class OCRServiceImpl {
             log.warn("释放OCR上下文资源失败", e);
         } finally {
             context.setRawMat(null);
-            context.setDetProbMap(null);
             context.setDetResultBoxes(null);
             context.setClsResultBoxes(null);
             context.setRecResultBoxes(null);

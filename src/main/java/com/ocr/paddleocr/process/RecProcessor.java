@@ -15,12 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.opencv.core.Mat;
 import org.opencv.core.Size;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.IdentityHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Slf4j
 public class RecProcessor {
@@ -43,32 +38,40 @@ public class RecProcessor {
     }
 
     public void recognize(OCRContext context) throws OrtException {
+        log.info("开始图像识别");
         long startTime = System.currentTimeMillis();
         List<TextBox> sourceBoxes = ocrConfig.isUseCls()
                 ? context.getClsResultBoxes()
                 : context.getDetResultBoxes();
 
-        if (sourceBoxes == null || sourceBoxes.isEmpty()) {
-            log.warn("Recognition skipped because text boxes are empty");
-            context.setRecProcessTime(System.currentTimeMillis() - startTime);
-            return;
-        }
-
-        RecState state = preprocess(sourceBoxes);
+        RecState state = preprocess(sourceBoxes, context);
         parse(state);
         List<TextBox> recResultBoxes = postprocess(state);
 
         context.setRecResultBoxes(recResultBoxes);
         context.setRecProcessTime(System.currentTimeMillis() - startTime);
-        log.info("Recognition done, totalBoxes: {}, elapsed: {} ms",
-                recResultBoxes.size(), context.getRecProcessTime());
+        log.info("图像识别完成, 耗时: {} ms", context.getRecProcessTime());
     }
 
-    private RecState preprocess(List<TextBox> sourceBoxes) throws OrtException {
+    private RecState preprocess(List<TextBox> sourceBoxes, OCRContext context) throws OrtException {
+        log.info("图像识别 - 预处理阶段");
         long startTime = System.currentTimeMillis();
-        boolean dynamicWidth = OnnxUtil.isDynamicWithInput(modelManager.getRecSession());
-        long[] modelInput = OnnxUtil.getModelInputShape(modelManager.getRecSession());
+        // rec模型输入形状和检测框
+        List<TextBox> boxes = ocrConfig.isUseCls() ? context.getClsResultBoxes() : context.getDetResultBoxes();
+        long[] modelInputShape = OnnxUtil.getModelInputShape(modelManager.getRecSession());
+        log.debug("图像识别模型输入形状(-1代表动态输入): Batch: {} x Channel: {} x Height:{} x Width:{} ",
+                modelInputShape[0], modelInputShape[1], modelInputShape[2], modelInputShape[3]);
+        // 确定模型输入尺寸
+        if (modelInputShape[2] != -1 && modelInputShape[3] != -1) {
+            log.info("模型固定输入尺寸");
+        } else if (modelInputShape[2] != -1) {
+            log.info("模型固定高度输入尺寸");
+        } else if (modelInputShape[3] != -1) {
+            log.info("模型固定宽度输入尺寸");
+        }
+
         int batchSize = ocrConfig.getBatchSize();
+        boolean dynamicWidth = OnnxUtil.isDynamicWithInput(modelManager.getRecSession());
         int recHeight = modelConfig.getRecModelHeight();
         int fixedRecWidth = modelConfig.getRecModelWith();
 
@@ -114,8 +117,8 @@ public class RecProcessor {
             batchIndex++;
             long batchStart = System.currentTimeMillis();
 
-            batch.setProbs(runRecBatchWithRetry(batch.getChwList(), state.getRecHeight(), batch.getBatchWidth(), 0));
-            totalSamples += batch.getProbs().length;
+            batch.setProb(runRecBatchWithRetry(batch.getChwList(), state.getRecHeight(), batch.getBatchWidth(), 0));
+            totalSamples += batch.getProb().length;
 
             long batchElapsed = System.currentTimeMillis() - batchStart;
             log.info("Recognition parse batch {}/{} done, batchSize: {}, batchWidth: {}, elapsed: {} ms",
@@ -134,7 +137,7 @@ public class RecProcessor {
         for (RecBatch batch : state.getBatches()) {
             for (int i = 0; i < batch.getBoxes().size(); i++) {
                 TextBox box = batch.getBoxes().get(i);
-                ctcDecode(box, batch.getProbs()[i]);
+                ctcDecode(box, batch.getProb()[i]);
                 decodedBoxes.add(box);
             }
         }
@@ -302,6 +305,26 @@ public class RecProcessor {
 
         box.setRecText(sb.toString().trim());
         box.setRecConfidence(confCount > 0 ? (confSum / confCount) : 0.0f);
+    }
+
+
+    /**
+     * 按检测框高度聚类
+     * @param boxes 检测框列表
+     * @param strideSize 分组间隔
+     * @return 按高度分组的Map, Key为高度区间起始值
+     */
+    private Map<Integer,List<TextBox>> heightGroup(List<TextBox> boxes,int strideSize) {
+        Map<Integer, List<TextBox>> heightGroups = new HashMap<>();
+        for (TextBox box : boxes) {
+            // 检测框的高度
+            int height = box.getCropMat().height();
+            // 计算分组key, 向上取整到strideSize的倍数
+            int groupKey = ((height + strideSize - 1) / strideSize) * strideSize;
+            // 将检测框添加到对应分组
+            heightGroups.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(box);
+        }
+        return heightGroups;
     }
 }
 

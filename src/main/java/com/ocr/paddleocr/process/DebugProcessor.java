@@ -55,7 +55,7 @@ public class DebugProcessor {
      */
     public static void printDetProbHeatmapImage(OCRContext context, String debugPath) {
         // 将概率图转换为伪彩色热力图
-        Mat heatmap = OpenCVUtil.createProbHeatmap(context.getDetProbMap());
+        Mat heatmap = OpenCVUtil.createProbHeatmap(context.getDetState().getProb());
         OpenCVUtil.saveImageAndRelease(heatmap, debugPath + "/det_prob_heatmap.jpg");
         log.debug("已保存检测模型输出的概率热力图, 文件名: det_prob_heatmap.jpg, 文件路径: {}", debugPath);
     }
@@ -70,7 +70,7 @@ public class DebugProcessor {
         // 获取阈值（默认0.3）
         float threshold = config == null ? 0.3f : config.getDetThresh();
         // 创建二值图（大于阈值=255，否则=0）
-        Mat binary = OpenCVUtil.createBinaryMap(context.getDetProbMap(), threshold);
+        Mat binary = OpenCVUtil.createBinaryMap(context.getDetState().getProb(), threshold);
         OpenCVUtil.saveImageAndRelease(binary, debugPath + "/det_binary_map.jpg");
         log.debug("已保存检测模型输出的概率图二值化后的图像, 文件名: det_binary_map.jpg, 文件路径: {}", debugPath);
     }

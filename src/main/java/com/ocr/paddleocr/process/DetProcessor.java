@@ -37,24 +37,21 @@ public class DetProcessor {
         log.info("开始图像检测");
         long startTime = System.currentTimeMillis();
         // 预处理
-        DetState detState = preprocess(context.getRawMat());
-        // 模型预检测
-        parse(detState);
+        preprocess(context);
+        // 模型推理
+        parse(context);
         // 后处理
-        List<TextBox> detResultBoxes = postprocess(detState);
-        // 设置结果
-        long elapsed = System.currentTimeMillis() - startTime;
-        context.setDetResultBoxes(detResultBoxes);
-        context.setDetProcessTime(elapsed);
-        log.info("图像检测完成, 耗时: {} ms", elapsed);
+        postprocess(context);
+        log.info("图像检测完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
     }
 
-    private DetState preprocess(Mat rawMat) throws OrtException {
+    private void preprocess(OCRContext context) throws OrtException {
         log.info("图像检测 - 预处理阶段");
         long startTime = System.currentTimeMillis();
-        // det模型输入形状
+        // det模型输入形状和原图
+        Mat rawMat = context.getRawMat();
         long[] modelInputShape = OnnxUtil.getModelInputShape(modelManager.getDetSession());
-        log.debug("检测模型输入形状(-1代表动态输入): Batch: {} x Channel: {} x Height:{} x Width:{} ",
+        log.debug("图像检测模型输入形状(-1代表动态输入): Batch: {} x Channel: {} x Height:{} x Width:{} ",
                 modelInputShape[0], modelInputShape[1], modelInputShape[2], modelInputShape[3]);
         // 获取原始图像尺寸
         Size rawSize = new Size(rawMat.width(), rawMat.height());
@@ -93,28 +90,31 @@ public class DetProcessor {
         // 返回结果
         long elapsed = System.currentTimeMillis() - startTime;
         log.info("预处理阶段完成, 耗时: {} ms", elapsed);
-        return DetState.builder()
-                .chwData(chwData)
-                .rawMatSize(rawSize)
-                .resizeMatSize(targetSize)
-                .modelInputSize(modelInputSize).build();
+        context.setDetState(
+                DetState.builder()
+                        .chwData(chwData)
+                        .rawMatSize(rawSize)
+                        .resizeMatSize(targetSize)
+                        .modelInputSize(modelInputSize).build()
+        );
     }
 
     /**
      * 模型推理
      */
-    private void parse(DetState detState) throws OrtException {
+    private void parse(OCRContext context) throws OrtException {
         log.info("图像检测 - 模型推理阶段");
         long startTime = System.currentTimeMillis();
+        DetState detState = context.getDetState();
         // 模型解析输入
         List<float[]> chwList = List.of(detState.getChwData());
         // 模型解析
         try (OnnxTensor input = OnnxUtil.createBatchInputTensor(chwList, modelManager.getEnv(), detState.getModelInputSize());
              Result output = modelManager.getDetSession().run(Collections.singletonMap("x", input))) {
             // 模型输出
-            float[][] probMap = OnnxUtil.parseDetOutput(output);
-            detState.setProbMap(probMap);
-            log.debug("模型推理完成, 特征图尺寸: Height:{} x Width:{}", probMap.length, probMap[0].length);
+            float[][] prob = OnnxUtil.parseDetOutput(output);
+            detState.setProb(prob);
+            log.debug("模型推理完成, 特征图尺寸: Height:{} x Width:{}", prob.length, prob[0].length);
         } catch (OrtException e) {
             log.error("检测模型推理失败", e);
             throw e;
@@ -125,17 +125,18 @@ public class DetProcessor {
     /**
      * 后处理: 二值化、轮廓查找过滤、检测框提取
      */
-    private List<TextBox> postprocess(DetState detState) {
+    private void postprocess(OCRContext context) {
         log.info("图像检测 - 后处理检测框提取阶段");
         long startTime = System.currentTimeMillis();
+        DetState detState = context.getDetState();
         // 概率图转 Mat
-        float[][] probMap = detState.getProbMap();
+        float[][] probMap = detState.getProb();
         Mat probMat = OpenCVUtil.buildProbMat(probMap);
         // 查找轮廓
         List<MatOfPoint> contours = findContours(probMat);
         if (contours.isEmpty()) {
             log.error("轮廓检测完成, 未检测出轮廓, 图像识别失败");
-            return Collections.emptyList();
+            context.setDetResultBoxes(List.of());
         }
         // 限制候选框数量
         if (contours.size() > modelConfig.getMaxCandidates()) {
@@ -173,6 +174,7 @@ public class DetProcessor {
                 index++;
             }
         }
+        context.setDetResultBoxes(textBoxes);
         // 资源释放
         OpenCVUtil.releaseMat(probMat);
         // 输出统计信息
@@ -180,7 +182,6 @@ public class DetProcessor {
         log.debug("过滤统计 - 面积不足过滤: {}, 平均置信度不足过滤: {}, 多边近似失败: {}, 最大宽高比过滤: {}, 最小尺寸过滤: {}, 扩边失败: {}, ",
                 areaFilterCount, scoreFilterCount, approxFilterCount, aspectRatioFilterCount, sizeFilterCount, expandFilterCount);
         log.info("后处理检测框提取阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
-        return textBoxes;
     }
 
     /**

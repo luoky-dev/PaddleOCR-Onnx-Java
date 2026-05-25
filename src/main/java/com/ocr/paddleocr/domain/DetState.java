@@ -33,9 +33,9 @@ public class DetState {
     private float[] chwData;
 
     /**
-     * 检测模型输出的概率图
+     * 检测模型输出的推理结果
      */
-    private float[][] probMap;
+    private float[][] prob;
 
     /**
      * 检测出的轮廓框

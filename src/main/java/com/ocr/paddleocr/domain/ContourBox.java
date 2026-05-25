@@ -6,8 +6,6 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.opencv.core.Point;
 
-import java.util.List;
-
 @Data
 @Builder
 @NoArgsConstructor
