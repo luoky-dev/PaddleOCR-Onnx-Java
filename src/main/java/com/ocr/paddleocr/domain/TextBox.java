@@ -30,6 +30,8 @@ public class TextBox {
      */
     private List<Point> points;
 
+    private Point[] restorePoints;
+
     /**
      * 透视变换裁剪后的矩形检测框图像
      */

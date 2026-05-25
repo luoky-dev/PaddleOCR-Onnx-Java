@@ -140,11 +140,6 @@ public class OCRServiceImpl {
                         .processingTime(System.currentTimeMillis() - startTime)
                         .build();
             }
-            // 使用透视变换裁剪
-            List<TextBox> detResultBoxes = context.getDetResultBoxes();
-            detResultBoxes.forEach(detResultBox -> detResultBox.setCropMat(
-                    OpenCVUtil.perspectiveTransformCrop(context.getRawMat(), detResultBox.getPoints())));
-            log.info("检测框裁剪完成");
             // 启用分类检测时进行分类检测和纠正
             if (ocrConfig.isUseCls()) {
                 log.info("方向分类检测已启用");

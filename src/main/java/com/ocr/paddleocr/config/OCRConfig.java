@@ -62,6 +62,9 @@ public class OCRConfig implements Serializable {
     // 检测框最小面积过滤
     @Builder.Default
     private int detMinArea = 5;
+    // 检测框最大宽高比过滤
+    @Builder.Default
+    private int detMaxAspectRatio = 20;
     // 检测框最低置信度阈值过滤
     @Builder.Default
     private float detBoxThresh = 0.6f;

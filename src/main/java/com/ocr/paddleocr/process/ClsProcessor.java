@@ -33,7 +33,7 @@ public class ClsProcessor {
         log.info("开始分类检测");
         long startTime = System.currentTimeMillis();
         // 预处理
-        List<ClsBatch> clsBatch = preprocess(context.getDetResultBoxes());
+        List<ClsBatch> clsBatch = preprocess(context);
         // 模型解析
         parse(clsBatch);
         // 后处理
@@ -48,10 +48,11 @@ public class ClsProcessor {
     /**
      * 预处理: 将检测框图像分批转换为模型输入格式
      */
-    private List<ClsBatch> preprocess(List<TextBox> detBoxes) throws OrtException {
+    private List<ClsBatch> preprocess(OCRContext context) throws OrtException {
         log.info("分类检测 - 预处理阶段");
         long startTime = System.currentTimeMillis();
         // cls模型输入形状和检测框
+        List<TextBox> detBoxes = context.getDetResultBoxes();
         long[] modelInputShape = OnnxUtil.getModelInputShape(modelManager.getClsSession());
         log.debug("方向分类模型输入形状(-1代表动态输入): Batch: {} x Channel: {} x Height:{} x Width:{} ",
                 modelInputShape[0], modelInputShape[1], modelInputShape[2], modelInputShape[3]);
@@ -74,10 +75,12 @@ public class ClsProcessor {
             // 当前批次检测框直接缩放归一到模型输入尺寸
             List<float[]> chwList = new ArrayList<>();
             for (TextBox textBox : batchBoxes) {
+                // 透视变换裁剪
+                Mat cropMat = OpenCVUtil.perspectiveTransformCrop(context.getRawMat(), textBox.getRestorePoints());
                 // 缩放和转换转换RGB通道
-                Mat rgbMat = OpenCVUtil.resizeToRGB(textBox.getCropMat(),new Size(modelInputW, modelInputH));
+                Mat rgbMat = OpenCVUtil.resizeToRGB(cropMat,new Size(modelInputW, modelInputH));
                 log.debug("图像缩放完成: H:{} x W:{} -> H:{} x W:{}",
-                        textBox.getCropMat().height(), textBox.getCropMat().width(), rgbMat.height(), rgbMat.width());
+                        cropMat.height(), cropMat.width(), rgbMat.height(), rgbMat.width());
                 // 归一化并转换CHW格式
                 float[] chwData = OpenCVUtil.normalizeToCHW(rgbMat, modelConfig.getLinearMean(), modelConfig.getLinearStd());
                 log.debug("图像归一标准化完成, 均值: {}, 标准差: {}",
@@ -85,6 +88,7 @@ public class ClsProcessor {
                         Arrays.toString(modelConfig.getLinearStd()));
                 chwList.add(chwData);
                 // 资源释放
+                OpenCVUtil.releaseMat(cropMat);
                 OpenCVUtil.releaseMat(rgbMat);
             }
             clsBatches.add(ClsBatch.builder().
@@ -143,9 +147,9 @@ public class ClsProcessor {
             // 当前批次的模型输出
             float[][] probVector = batch.getProbVector();
             for (int i = 0; i < batch.getBoxes().size(); i++) {
-                // 当前文本框
+                // 当前检测框框
                 TextBox box = batch.getBoxes().get(i);
-                // 当前文本框方向分类概率数组
+                // 当前检测框框方向分类概率数组
                 String[] decoded = OpenCVUtil.decode(probVector[i], modelConfig.getAngleDict());
                 // 角度
                 int angle = Integer.parseInt(decoded[2]);
@@ -157,9 +161,8 @@ public class ClsProcessor {
                 box.setClsConfidence(score);
                 // 旋转纠正图像
                 if (score > ocrConfig.getClsThresh() && angle != 0) {
-                    box.setCropMat(OpenCVUtil.rotate(box.getCropMat(), angle));
                     box.setRotate(true);
-                    log.trace("当前检测框角度非正向角度且置信度超过阈值, 触发执行旋转纠正操作");
+                    log.trace("当前检测框角度非正向角度且置信度超过阈值, 需要执行旋转纠正操作");
                 } else {
                     box.setRotate(false);
                     log.trace("当前检测框角度正常或非正向角度置信度过低");

@@ -259,13 +259,12 @@ public class OpenCVUtil {
      * 透视变换裁剪
      *
      * @param image 原始图像
-     * @param box 文本框四点坐标
+     * @param points 文本框四点坐标
      * @return 校正后的矩形图像
      */
-    public static Mat perspectiveTransformCrop(Mat image, List<Point> box) {
-        // 获取四点坐标并排序
-        Point[] srcPoints = box.toArray(new Point[4]);
-        Point[] sortedSrc = orderPoints(srcPoints);
+    public static Mat perspectiveTransformCrop(Mat image, Point[] points) {
+        // 坐标排序
+        Point[] sortedSrc = orderPoints(points);
 
         // 计算目标矩形的宽度和高度
         double width = Math.max(
@@ -367,41 +366,21 @@ public class OpenCVUtil {
     }
 
     /**
-     * 将四点坐标按顺时针顺序排序（从左上角开始）
-     *
-     * @param pts 四点坐标数组
-     * @return 排序后的四点坐标数组 [左上, 右上, 右下, 左下]
+     * 对四点坐标按顺时针/逆时针排序（基于中心点角度）
+     * @param points 四个点的数组
+     * @return 排序后的四个点数组（按角度从 -π 到 π 排序）
      */
-    public static Point[] orderPoints(Point[] pts) {
-        if (pts == null || pts.length != 4) {
-            return pts;
+    public static Point[] orderPoints(Point[] points) {
+        if (points == null || points.length != 4) {
+            return points;
         }
         // 计算中心点
-        double cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
-        double cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;
+        double cx = (points[0].x + points[1].x + points[2].x + points[3].x) / 4;
+        double cy = (points[0].y + points[1].y + points[2].y + points[3].y) / 4;
         // 按角度排序
-        List<Point> points = new ArrayList<>(Arrays.asList(pts));
-        points.sort(Comparator.comparingDouble(p -> Math.atan2(p.y - cy, p.x - cx)));
-        return points.toArray(new Point[4]);
-    }
-
-    /**
-     * 将四点坐标按顺时针顺序排序（从左上角开始）
-     *
-     * @param pts 四点坐标列表
-     * @return 排序后的四点坐标列表 [左上, 右上, 右下, 左下]
-     */
-    public static List<Point> orderPoints(List<Point> pts) {
-        if (pts == null || pts.size() != 4) {
-            return pts;
-        }
-        // 计算中心点
-        double cx = pts.stream().mapToDouble(p -> p.x).sum() / 4;
-        double cy = pts.stream().mapToDouble(p -> p.y).sum() / 4;
-        // 按角度排序
-        List<Point> ordered = new ArrayList<>(pts);
-        ordered.sort(Comparator.comparingDouble(p -> Math.atan2(p.y - cy, p.x - cx)));
-        return ordered;
+        List<Point> orderPoints = new ArrayList<>(Arrays.asList(points));
+        orderPoints.sort(Comparator.comparingDouble(p -> Math.atan2(p.y - cy, p.x - cx)));
+        return orderPoints.toArray(new Point[4]);
     }
 
     /**
@@ -613,51 +592,6 @@ public class OpenCVUtil {
     }
 
     /**
-     * Mat转换为指定高宽的CHW[channel,height,width]格式, 并做padding
-     * @param mat
-     * @return
-     */
-    public static float[] matToChw(Mat mat, int height, int width, int channels) {
-        int matChannels = mat.channels();
-        int matHeight = mat.height();
-        int matWidth = mat.width();
-        float[] chwData = new float[matChannels * matHeight * matWidth];
-        // 获取HWC格式数组
-        float[] hwcData = new float[height * width * channels];
-        mat.get(0, 0, hwcData);
-        // 转换为CHW格式数组
-        for (int c = 0; c < channels; c++) {
-            for (int h = 0; h < height; h++) {
-                for (int w = 0; w < width; w++) {
-                    int chwIndex = (c * height + h) * width + w;
-                    int hwcIndex = (h * width + w) * channels + c;
-                    chwData[chwIndex] = hwcData[hwcIndex];
-                }
-            }
-        }
-        return chwData;
-    }
-
-    /**
-     * 获取概率数组中最大概率的数组下标和概率
-     * @param probs 概率数组
-     * @return {index 数组下标, prob 概率}
-     */
-    public static int[] getBestProb(float[] probs){
-        // 找出最大概率的索引
-        int bestIndex = 0;
-        float bestProb = probs[0];
-        for (int i = 1; i < probs.length; i++) {
-            if (probs[i] > bestProb) {
-                bestProb = probs[i];
-                bestIndex = i;
-            }
-        }
-        // 将概率值通过 floatToIntBits 编码为 int 便于存储
-        return new int[]{bestIndex, Float.floatToIntBits(bestProb)};
-    }
-
-    /**
      * 通用解码方法
      * 通过概率数组和字典的length一一对应的关系获取最大概率字典值
      * @param probs 概率数组
@@ -687,48 +621,27 @@ public class OpenCVUtil {
         } else if (angle == 270) {
             // 90度逆时针旋转（等价于270度顺时针）
             Core.rotate(srcMat, dstMat, Core.ROTATE_90_COUNTERCLOCKWISE);
+        } else {
+            return srcMat;
         }
         return dstMat;
     }
 
     /**
-     * 按宽高两个缩放比例分别还原坐标到原图坐标
-     *
-     * @param points 还原前坐标
-     * @param scaleX 宽度缩放比例
-     * @param scaleY 高度缩放比例
-     * @param srcW 原图宽度
-     * @param srcH 原图高度
-     * @return List<Point>
-     */
-    public static List<Point> restorePoints(List<Point> points, float scaleX, float scaleY, int srcW, int srcH) {
-        float safeScaleX = scaleX <= 0 ? 1.0f : scaleX;
-        float safeScaleY = scaleY <= 0 ? 1.0f : scaleY;
-        List<Point> restored = new ArrayList<>();
-        for (Point p : points) {
-            double x = p.x / safeScaleX;
-            double y = p.y / safeScaleY;
-            restored.add(new Point(
-                    Math.max(0, Math.min(x, srcW - 1)),
-                    Math.max(0, Math.min(y, srcH - 1))));
-        }
-        return restored;
-    }
-
-    /**
      * 还原检测框坐标到原图尺寸
-     * @param points 当前图像上的顶点坐标
-     * @param resizeSize 当前缩放的图像尺寸 (width, height)
-     * @param originalSize 原始图像尺寸 (width, height)
-     * @return 还原后的坐标（已裁剪到原图范围内）
+     * @param points 当前图像上的顶点坐标数组
+     * @param resizeSize 当前图像尺寸（缩放后的尺寸）
+     * @param originalSize 原始图像尺寸
+     * @return 还原后的坐标数组
      */
-    public static List<Point> restorePoints(List<Point> points, Size resizeSize, Size originalSize) {
+    public static Point[] restorePoints(Point[] points, Size resizeSize, Size originalSize) {
         // 计算缩放比例
-        float scaleX = (float) (originalSize.width / resizeSize.width);
-        float scaleY = (float) (originalSize.height / resizeSize.height);
+        double scaleX =  originalSize.width / resizeSize.width;
+        double scaleY =  originalSize.height / resizeSize.height;
 
-        List<Point> restored = new ArrayList<>();
-        for (Point p : points) {
+        Point[] restored = new Point[points.length];
+        for (int i = 0; i < points.length; i++) {
+            Point p = points[i];
             double x = p.x * scaleX;
             double y = p.y * scaleY;
 
@@ -736,7 +649,7 @@ public class OpenCVUtil {
             x = Math.max(0, Math.min(x, originalSize.width - 1));
             y = Math.max(0, Math.min(y, originalSize.height - 1));
 
-            restored.add(new Point(x, y));
+            restored[i] = new Point(x, y);
         }
         return restored;
     }
@@ -792,21 +705,20 @@ public class OpenCVUtil {
     }
 
     /**
-     * 多边形扩张算法
-     *
-     * @param polygon 原始多边形顶点
-     * @param distance 扩张距离
-     * @return 扩张后的多边形顶点
+     * 多边形外扩（Unclip）
+     * @param polygon 原始多边形顶点数组
+     * @param distance 外扩距离（正数向外扩，负数向内缩）
+     * @return 外扩后的多边形顶点数组
      */
-    public static List<Point> unclipPolygon(Point[] polygon, double distance) {
+    public static Point[] unclipPolygon(Point[] polygon, double distance) {
         if (polygon == null || polygon.length < 3) {
-            return new ArrayList<>();
+            return new Point[0];
         }
 
         if (Math.abs(distance) < 1e-6) {
-            List<Point> result = new ArrayList<>();
-            for (Point p : polygon) {
-                result.add(p.clone());
+            Point[] result = new Point[polygon.length];
+            for (int i = 0; i < polygon.length; i++) {
+                result[i] = polygon[i].clone();
             }
             return result;
         }
@@ -814,7 +726,7 @@ public class OpenCVUtil {
         int n = polygon.length;
 
         // 1. 计算每条边的外扩向量
-        List<double[]> moveVecs = new ArrayList<>();
+        double[][] moveVecs = new double[n][2];
 
         for (int i = 0; i < n; i++) {
             Point p1 = polygon[i];
@@ -826,7 +738,8 @@ public class OpenCVUtil {
             double length = Math.hypot(dx, dy);
 
             if (length < 1e-6) {
-                moveVecs.add(new double[]{0, 0});
+                moveVecs[i][0] = 0;
+                moveVecs[i][1] = 0;
                 continue;
             }
 
@@ -834,19 +747,17 @@ public class OpenCVUtil {
             double ux = dx / length;
             double uy = dy / length;
 
-            // 垂直向量（向外）
-            double vx = -uy;
-
-            // 扩张向量
-            moveVecs.add(new double[]{vx * distance, ux * distance});
+            // 计算垂直单位方向并扩张
+            moveVecs[i][0] = -uy * distance;
+            moveVecs[i][1] = ux * distance;
         }
 
         // 2. 计算新顶点位置
-        List<Point> expanded = new ArrayList<>();
+        Point[] expanded = new Point[n];
 
         for (int i = 0; i < n; i++) {
-            double[] move1 = moveVecs.get(i);
-            double[] move2 = moveVecs.get((i + 1) % n);
+            double[] move1 = moveVecs[i];
+            double[] move2 = moveVecs[(i + 1) % n];
 
             Point p = polygon[(i + 1) % n];
 
@@ -854,39 +765,67 @@ public class OpenCVUtil {
             double newX = p.x + move1[0] + move2[0];
             double newY = p.y + move1[1] + move2[1];
 
-            expanded.add(new Point(newX, newY));
+            expanded[i] = new Point(newX, newY);
         }
 
         return expanded;
     }
 
     /**
-     * 多边形近似算法
-     *
-     * @param points 原始点集
-     * @param epsilon 近似精度
-     * @param closed 是否闭合
-     * @return 近似后的点集
+     * 通过矩形顶点获取矩形框尺寸/四边形最大尺寸
+     * @param points 矩形四个顶点（已排序）
+     * @return Size对象（最大宽度、最大高度）
      */
-    public static List<Point> approxPolyDP(List<Point> points, double epsilon, boolean closed) {
-        if (points == null || points.isEmpty()) {
-            return new ArrayList<>();
+    public static Size getRectSize(Point[] points) {
+        if (points == null || points.length != 4) {
+            return new Size(0, 0);
         }
 
-        MatOfPoint2f mat = new MatOfPoint2f();
-        mat.fromList(points);
+        // 计算宽度（取上边和下边的最大值）
+        double width = Math.max(
+                distance(points[0], points[1]),
+                distance(points[2], points[3])
+        );
 
+        // 计算高度（取左边和右边的最大值）
+        double height = Math.max(
+                distance(points[0], points[3]),
+                distance(points[1], points[2])
+        );
+
+        return new Size(Math.max(width, 1), Math.max(height, 1));
+    }
+
+    /**
+     * 多边形近似（Douglas-Peucker算法）
+     * @param points 原始多边形顶点数组
+     * @param epsilon 近似精度（越小越接近原形状，越大简化越多）
+     * @param closed 是否为闭合多边形
+     * @return 简化后的多边形顶点数组
+     */
+    public static Point[] approxPolyDP(MatOfPoint points, double epsilon, boolean closed) {
+        if (points == null || points.toArray().length == 0) {
+            return new Point[0];
+        }
+
+        // 转换为 MatOfPoint2f
+        MatOfPoint2f mat = new MatOfPoint2f(points.toArray());
         MatOfPoint2f approx = new MatOfPoint2f();
+
+        // 执行多边形近似
         Imgproc.approxPolyDP(mat, approx, epsilon, closed);
 
-        List<Point> result = new ArrayList<>();
-        for (int i = 0; i < approx.total(); i++) {
+        // 提取结果
+        int total = (int) approx.total();
+        Point[] result = new Point[total];
+        for (int i = 0; i < total; i++) {
             double[] point = approx.get(i, 0);
-            result.add(new Point(point[0], point[1]));
+            result[i] = new Point(point[0], point[1]);
         }
 
-        releaseMat(mat);
-        releaseMat(approx);
+        // 释放资源
+        mat.release();
+        approx.release();
 
         return result;
     }
@@ -908,39 +847,6 @@ public class OpenCVUtil {
             }
         }
         return mat;
-    }
-
-    /**
-     * 顶点转矩形框
-     */
-    public static Rect toBoundingRect(List<Point> points) {
-        if (points == null || points.size() < 3) {
-            return new Rect(0, 0, 1, 1);
-        }
-        MatOfPoint mat = new MatOfPoint();
-        mat.fromList(points);
-        Rect rect = Imgproc.boundingRect(mat);
-        releaseMat(mat);
-        return rect.width > 0 && rect.height > 0 ? rect : new Rect(0, 0, 1, 1);
-    }
-
-    /**
-     * 从矩形框提取4个顶点（按顺时针顺序）
-     * @param rect 矩形框
-     * @return 4个顶点列表（顺序：左上、右上、右下、左下）
-     */
-    public static List<Point> getRectPoints(Rect rect) {
-        if (rect == null) {
-            return new ArrayList<>();
-        }
-
-        List<Point> points = new ArrayList<>(4);
-        points.add(new Point(rect.x, rect.y));                           // 左上
-        points.add(new Point(rect.x + rect.width, rect.y));              // 右上
-        points.add(new Point(rect.x + rect.width, rect.y + rect.height)); // 右下
-        points.add(new Point(rect.x, rect.y + rect.height));              // 左下
-
-        return points;
     }
 
     public static Mat createProbHeatmap(float[][] probMap) {
