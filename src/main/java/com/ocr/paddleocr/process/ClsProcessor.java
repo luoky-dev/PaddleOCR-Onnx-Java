@@ -38,7 +38,7 @@ public class ClsProcessor {
         parse(context);
         // 后处理
         postprocess(context);
-        log.info("分类检测完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
+        log.info("分类检测完成, 角度分类完成检测框数量: {}, 耗时: {} ms", context.getClsResultBoxes().size(), System.currentTimeMillis() - startTime);
     }
 
     /**
@@ -67,20 +67,21 @@ public class ClsProcessor {
             batchCount ++;
             // 分组
             int batchEnd = Math.min(batchBegin + batchSize, boxes.size());
+            log.debug("分组预处理第 {} 批开始", batchCount);
             List<TextBox> batchBoxes = boxes.subList(batchBegin, batchEnd);
-            log.debug("分组预处理第 {} 批, 本批检测框数量: {}", batchCount, batchBoxes.size());
             // 当前批次检测框直接缩放归一到模型输入尺寸
             List<float[]> chwList = new ArrayList<>();
             for (TextBox textBox : batchBoxes) {
                 // 透视变换裁剪
-                Mat cropMat = OpenCVUtil.perspectiveTransformCrop(context.getRawMat(), textBox.getRestorePoints());
+                Mat cropMat = OpenCVUtil.perspectiveTransformCrop(context.getRawMat(), textBox.getPoints());
+                log.trace("图像裁剪完成, 裁剪图尺寸: H:{} x W:{} ", cropMat.height(), cropMat.width());
                 // 缩放和转换转换RGB通道
                 Mat rgbMat = OpenCVUtil.resizeToRGB(cropMat,new Size(modelInputW, modelInputH));
-                log.debug("图像缩放完成: H:{} x W:{} -> H:{} x W:{}",
+                log.trace("图像缩放完成: H:{} x W:{} -> H:{} x W:{}",
                         cropMat.height(), cropMat.width(), rgbMat.height(), rgbMat.width());
                 // 归一化并转换CHW格式
                 float[] chwData = OpenCVUtil.normalizeToCHW(rgbMat, modelConfig.getLinearMean(), modelConfig.getLinearStd());
-                log.debug("图像归一标准化完成, 均值: {}, 标准差: {}",
+                log.trace("图像归一标准化完成, 均值: {}, 标准差: {}",
                         Arrays.toString(modelConfig.getLinearMean()),
                         Arrays.toString(modelConfig.getLinearStd()));
                 chwList.add(chwData);
@@ -88,10 +89,12 @@ public class ClsProcessor {
                 OpenCVUtil.releaseMat(cropMat);
                 OpenCVUtil.releaseMat(rgbMat);
             }
-            clsBatches.add(ClsBatch.builder().
-                    chwList(chwList).
-                    modelInputSize(new Size(modelInputW, modelInputH)).
-                    boxes(batchBoxes)
+            log.debug("分组预处理第 {} 批完成, 本批检测框数量: {}, 统一尺寸: H:{} x W:{}",
+                    batchCount, batchBoxes.size(), modelInputH, modelInputW);
+            clsBatches.add(ClsBatch.builder()
+                    .chwList(chwList)
+                    .modelInputSize(new Size(modelInputW, modelInputH))
+                    .boxes(batchBoxes)
                     .build());
         }
         context.setClsBatches(clsBatches);
@@ -132,6 +135,7 @@ public class ClsProcessor {
         log.info("分类检测 - 后处理检测框旋转纠正阶段");
         long startTime = System.currentTimeMillis();
         List<ClsBatch> clsBatch = context.getClsBatches();
+        List<TextBox> clsResultBoxes = new ArrayList<>();
         // 判断模型输出和角度分类字典是否匹配
         if (clsBatch.get(0).getProb()[0].length != modelConfig.getAngleDict().length) {
             log.error("模型输出与字典类型不匹配, 分类检测后处理失败");
@@ -139,21 +143,20 @@ public class ClsProcessor {
         }
         // 按批次解码
         int batchCount = 0;
-        List<TextBox> clsResultBoxes = new ArrayList<>();
         for (ClsBatch batch : clsBatch) {
             batchCount ++;
             log.debug("当前解码处理第 {}/{} 批次, 本批次检测框数量: {}", batchCount, clsBatch.size(), batch.getBoxes().size());
             // 当前批次的模型输出
-            float[][] probVector = batch.getProb();
+            float[][] prob = batch.getProb();
             for (int i = 0; i < batch.getBoxes().size(); i++) {
                 // 当前检测框框
                 TextBox box = batch.getBoxes().get(i);
                 // 当前检测框框方向分类概率数组
-                String[] decoded = OpenCVUtil.decode(probVector[i], modelConfig.getAngleDict());
+                int[] decoded = OpenCVUtil.decode(prob[i]);
                 // 角度
-                int angle = Integer.parseInt(decoded[2]);
+                int angle = modelConfig.getAngleDict()[decoded[0]];
                 // 置信度
-                float score = Float.parseFloat(decoded[1]);
+                float score = Float.intBitsToFloat(decoded[1]);
                 log.trace("解码当前批次第 {} 个检测框完成, 角度: {}, 置信度: {}, 正常阈值: {}", i, angle, score, ocrConfig.getClsThresh());
                 // 设值
                 box.setAngle(angle);

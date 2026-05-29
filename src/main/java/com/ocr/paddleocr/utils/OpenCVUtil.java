@@ -1,19 +1,16 @@
 package com.ocr.paddleocr.utils;
 
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.Polygon;
 import org.opencv.core.*;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.InputStreamReader;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.List;
+import java.util.*;
 
 /**
  * OpenCV 工具类
@@ -89,7 +86,7 @@ public class OpenCVUtil {
         matOfPoint.fromList(points);
 
         // 绘制多边形轮廓
-        Imgproc.polylines(image, java.util.Collections.singletonList(matOfPoint),
+        Imgproc.polylines(image, Collections.singletonList(matOfPoint),
                 true, color, thickness);
 
         OpenCVUtil.releaseMat(matOfPoint);
@@ -142,7 +139,7 @@ public class OpenCVUtil {
             rect.points(vertices);
 
             // 将顶点转换为列表
-            List<Point> points = java.util.Arrays.asList(vertices);
+            List<Point> points = Arrays.asList(vertices);
             drawPolygon(result, points, color, thickness);
         }
 
@@ -233,26 +230,20 @@ public class OpenCVUtil {
         return image;
     }
 
-    public static List<String> readDictionary(String dictPath) {
-        List<String> dictionary = new ArrayList<>();
-        try (BufferedReader br = new BufferedReader(
-                new InputStreamReader(new FileInputStream(dictPath), StandardCharsets.UTF_8))) {
-            String line;
-            boolean firstLine = true;
-            while ((line = br.readLine()) != null) {
-                if (firstLine && line.startsWith("\uFEFF")) {
-                    line = line.substring(1);
-                }
-                firstLine = false;
-                if (line.isEmpty()) {
-                    continue;
-                }
-                dictionary.add(line);
-            }
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to read dictionary: " + dictPath, e);
+    public static String[] readDictionary(String dictPath) throws IOException {
+        List<String> dictList = new ArrayList<>();
+        BufferedReader br = new BufferedReader(
+                new InputStreamReader(new FileInputStream(dictPath), StandardCharsets.UTF_8));
+        String line;
+        // 开始添加blank token
+        dictList.add("");
+        while ((line = br.readLine()) != null) {
+            dictList.add(line);
         }
-        return dictionary;
+        // 末尾添加unknown token
+        dictList.add(" ");
+        br.close();
+        return dictList.toArray(new String[0]);
     }
 
     /**
@@ -263,17 +254,15 @@ public class OpenCVUtil {
      * @return 校正后的矩形图像
      */
     public static Mat perspectiveTransformCrop(Mat image, Point[] points) {
-        // 坐标排序
-        Point[] sortedSrc = orderPoints(points);
 
         // 计算目标矩形的宽度和高度
         double width = Math.max(
-                distance(sortedSrc[0], sortedSrc[1]),
-                distance(sortedSrc[2], sortedSrc[3])
+                distance(points[0], points[1]),
+                distance(points[2], points[3])
         );
         double height = Math.max(
-                distance(sortedSrc[0], sortedSrc[3]),
-                distance(sortedSrc[1], sortedSrc[2])
+                distance(points[0], points[3]),
+                distance(points[1], points[2])
         );
         width = Math.max(width, 1);
         height = Math.max(height, 1);
@@ -287,7 +276,7 @@ public class OpenCVUtil {
         };
 
         // 计算透视变换矩阵
-        MatOfPoint2f srcMat = new MatOfPoint2f(sortedSrc);
+        MatOfPoint2f srcMat = new MatOfPoint2f(points);
         MatOfPoint2f dstMat = new MatOfPoint2f(dstPoints);
         Mat transform = Imgproc.getPerspectiveTransform(srcMat, dstMat);
         // 执行透视变换
@@ -298,62 +287,6 @@ public class OpenCVUtil {
         releaseMat(dstMat);
         releaseMat(transform);
         return result;
-    }
-
-    /**
-     * 多边形裁剪（适用于 detUsePolygon=true 的不规则文本框）
-     * 流程：多边形掩码 -> 位与保留区域 -> 外接矩形裁剪
-     *
-     * @param image 原始图像
-     * @param polygon 多边形顶点（>=3）
-     * @return 裁剪后的图像，失败时返回 empty Mat
-     */
-    public static Mat polygonCrop(Mat image, List<Point> polygon) {
-        if (image == null || image.empty() || polygon == null || polygon.size() < 3) {
-            return new Mat();
-        }
-
-        int maxX = image.cols() - 1;
-        int maxY = image.rows() - 1;
-        if (maxX < 0 || maxY < 0) {
-            return new Mat();
-        }
-
-        // 顶点裁剪到图像范围内，避免 fillPoly / boundingRect 越界问题
-        List<Point> clipped = new ArrayList<>(polygon.size());
-        for (Point p : polygon) {
-            double x = Math.max(0, Math.min(p.x, maxX));
-            double y = Math.max(0, Math.min(p.y, maxY));
-            clipped.add(new Point(x, y));
-        }
-
-        MatOfPoint poly = new MatOfPoint();
-        poly.fromList(clipped);
-        Rect rect = Imgproc.boundingRect(poly);
-        if (rect.width <= 0 || rect.height <= 0) {
-            releaseMat(poly);
-            return new Mat();
-        }
-
-        List<Point> roiPolygon = new ArrayList<>(clipped.size());
-        for (Point p : clipped) {
-            roiPolygon.add(new Point(p.x - rect.x, p.y - rect.y));
-        }
-
-        MatOfPoint roiPoly = new MatOfPoint();
-        roiPoly.fromList(roiPolygon);
-        Mat mask = Mat.zeros(rect.height, rect.width, CvType.CV_8UC1);
-        Imgproc.fillPoly(mask, Collections.singletonList(roiPoly), new Scalar(255));
-
-        Mat roi = new Mat(image, rect);
-        Mat cropped = new Mat();
-        Core.bitwise_and(roi, roi, cropped, mask);
-
-        releaseMat(poly);
-        releaseMat(roiPoly);
-        releaseMat(mask);
-        releaseMat(roi);
-        return cropped;
     }
 
     /**
@@ -384,98 +317,23 @@ public class OpenCVUtil {
     }
 
     /**
-     * RGB图像的归一化 + 标准化
-     * @param rgb RGB通道
-     * @param mean RGB通道的均值
-     * @param std RGB通道的标准差
-     * @return Mat
+     * 交换四点顺序，实现宽高交换（竖排转横排）
+     * @param points 原始四点坐标（已排序：左上、右上、右下、左下）
+     * @return 交换后的四点坐标
      */
-    public static Mat normalize(Mat rgb, float[] mean, float[] std) {
-        // 转换为浮点并归一化x
-        Mat floatMat = new Mat();
-        // 将 0-255 的整数值转换为 0.0-1.0 的浮点数
-        rgb.convertTo(floatMat, CvType.CV_32FC3, 1.0 / 255.0);
-
-        // 分离RGB三个通道
-        List<Mat> channels = new ArrayList<>();
-        Core.split(floatMat, channels);
-
-        // 标准化 (Standardization), 公式: (x - mean) / std
-        // 使数据分布接近标准正态分布, 有助于模型收敛
-        for (int i = 0; i < 3; i++) {
-            // 减去均值
-            Core.subtract(channels.get(i), new Scalar(mean[i]), channels.get(i));
-            // 除以标准差
-            Core.divide(channels.get(i), new Scalar(std[i]), channels.get(i));
+    public static Point[] rotateOrderPoints(Point[] points) {
+        if (points == null || points.length != 4) {
+            return points;
         }
-        // 合并通道
-        Core.merge(channels, floatMat);
-        // 释放临时资源
-        for (Mat ch : channels) {
-            releaseMat(ch);
-        }
-        return floatMat;
-    }
 
-    /**
-     * 将图像缩放归一化到 [-1, 1], 并转换为 CHW 格式
-     *
-     * @param mat 原始文本图像
-     * @param imgH 模型要求的高度
-     * @param imgW 模型要求的宽度
-     * @return CHW格式的浮点数组 [3, imgH, imgW], 值范围 [-1, 1]
-     */
-    public static float[] resizeNormalize(Mat mat, int imgH, int imgW){
-
-        // 计算缩放后的宽度（保持高宽比）
-        int srcH = mat.rows();
-        int srcW = mat.cols();
-        // 计算宽高比
-        float ratio = srcH > 0 ? (float) srcW / (float) srcH : 1.0f;
-
-        // 计算缩放后的宽度, 高度固定为 imgH, 宽度按比例缩放
-        int resizedW = Math.min(imgW, Math.max(1, Math.round(imgH * ratio)));
-
-        // 缩放图像到, 保持文本不扭曲
-        Mat resized = new Mat();
-        Imgproc.resize(mat, resized, new Size(resizedW, imgH));
-
-        // 转换为 float32 类型, 并归一化到 [0, 1]
-        Mat floatMat = new Mat();
-        // 1.0/255.0 将像素值从 [0, 255] 映射到 [0, 1]
-        resized.convertTo(floatMat, CvType.CV_32FC3, 1.0 / 255.0);
-        releaseMat(resized);
-
-        // 转换为 HWC 格式数组
-        // HWC: Height x Width x Channel (高度 x 宽度 x 通道)
-        float[] hwc = new float[imgH * resizedW * 3];
-        floatMat.get(0, 0, hwc);
-        releaseMat(floatMat);
-
-        // 转换为 ONNX 模型要求的输入 CHW 格式, 并归一化到 [-1, 1]
-        // CHW: Channel x Height x Width (通道 x 高度 x 宽度)
-        float[] chw = new float[3 * imgH * imgW];
-
-        // 遍历：通道 → 高度 → 宽度
-        for (int c = 0; c < 3; c++) {
-            for (int h = 0; h < imgH; h++) {
-                for (int w = 0; w < imgW; w++) {
-                    // 计算CHW数组的索引
-                    int chwIdx = (c * imgH + h) * imgW + w;
-                    if (w < resizedW) {
-                        // 图像区域：转换 HWC → CHW
-                        // HWC索引: (行 × 宽度 + 列) × 3 + 通道
-                        int hwcIdx = (h * resizedW + w) * 3 + c;
-                        // 从 [0, 1] 归一化到 [-1, 1] 公式：output = (input - 0.5) / 0.5
-                        chw[chwIdx] = (hwc[hwcIdx] - 0.5f) / 0.5f;
-                    } else {
-                        // Padding区域填充 -1 对应像素值 0（全黑）
-                        chw[chwIdx] = -1.0f;
-                    }
-                }
-            }
-        }
-        return chw;
+        // 原始顺序: [0]左上, [1]右上, [2]右下, [3]左下
+        // 交换后: [0]左上, [1]左下, [2]右下, [3]右上
+        return new Point[]{
+                points[0],  // 左上保持不变
+                points[3],  // 左下 -> 右上
+                points[2],  // 右下保持不变
+                points[1]   // 右上 -> 左下
+        };
     }
 
     /**
@@ -500,7 +358,18 @@ public class OpenCVUtil {
         int dstW = (int) Math.ceil((double) scaledW / strideSize) * strideSize;
         int dstH = (int) Math.ceil((double) scaledH / strideSize) * strideSize;
 
-        return new Size(dstW, dstH);
+        return new Size(Math.max(dstW, 1), Math.max(dstH, 1));
+    }
+
+    /**
+     * 将尺寸中的宽度对齐到strideSize倍数
+     * @param srcSize 原始尺寸
+     * @param strideSize 对齐步长
+     * @return 对齐后的尺寸（高度不变，宽度对齐）
+     */
+    public static Size widthToStride(Size srcSize, int strideSize) {
+        int alignedWidth = ((int) srcSize.width + strideSize - 1) / strideSize * strideSize;
+        return new Size(Math.max(alignedWidth, 1), Math.max(srcSize.height, 1));
     }
 
     /**
@@ -516,7 +385,7 @@ public class OpenCVUtil {
         float scale = (float) targetHeight / srcH;
         // 计算缩放后的宽度
         int targetWidth = Math.round(srcW * scale);
-        return new Size(targetWidth, targetHeight);
+        return new Size(Math.max(targetWidth, 1), Math.max(targetHeight, 1));
     }
 
     /**
@@ -593,12 +462,11 @@ public class OpenCVUtil {
 
     /**
      * 通用解码方法
-     * 通过概率数组和字典的length一一对应的关系获取最大概率字典值
      * @param probs 概率数组
-     * @param dict 字典
-     * @return String[]{最大概率索引, 最大概率, 映射字典值}
+     * @return int[]{最大概率索引, 最大概率}
      */
-    public static String[] decode(float[] probs, String[] dict) {
+    public static int[] decode(float[] probs){
+        // 找出最大概率的索引
         int bestIndex = 0;
         float bestProb = probs[0];
         for (int i = 1; i < probs.length; i++) {
@@ -607,7 +475,8 @@ public class OpenCVUtil {
                 bestIndex = i;
             }
         }
-        return new String[]{String.valueOf(bestIndex), String.valueOf(bestProb), dict[bestIndex]};
+        // 将概率值通过 floatToIntBits 编码为 int 便于存储
+        return new int[]{bestIndex, Float.floatToIntBits(bestProb)};
     }
 
     public static Mat rotate(Mat srcMat, int angle) {
@@ -622,6 +491,7 @@ public class OpenCVUtil {
             // 90度逆时针旋转（等价于270度顺时针）
             Core.rotate(srcMat, dstMat, Core.ROTATE_90_COUNTERCLOCKWISE);
         } else {
+            releaseMat(dstMat);
             return srcMat;
         }
         return dstMat;
@@ -652,6 +522,41 @@ public class OpenCVUtil {
             restored[i] = new Point(x, y);
         }
         return restored;
+    }
+
+    /**
+     * 根据四点坐标计算四边形面积
+     * @param points 四点坐标（顺序不限，但建议连续）
+     * @return 面积
+     */
+    public static double getArea(Point[] points) {
+        if (points == null || points.length != 4) {
+            return 0.0;
+        }
+
+        // 使用鞋带公式（Shoelace formula）
+        double sum = 0.0;
+        for (int i = 0; i < points.length; i++) {
+            Point p1 = points[i];
+            Point p2 = points[(i + 1) % points.length];
+            sum += p1.x * p2.y - p2.x * p1.y;
+        }
+
+        return Math.abs(sum) / 2.0;
+    }
+
+    /**
+     * 计算多边形周长
+     */
+    private static double getPerimeter(Point[] points) {
+        double perimeter = 0;
+        int n = points.length;
+        for (int i = 0; i < n; i++) {
+            Point p1 = points[i];
+            Point p2 = points[(i + 1) % n];
+            perimeter += Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        }
+        return perimeter;
     }
 
     /**
@@ -707,13 +612,22 @@ public class OpenCVUtil {
     /**
      * 多边形外扩（Unclip）
      * @param polygon 原始多边形顶点数组
-     * @param distance 外扩距离（正数向外扩，负数向内缩）
+     * @param unclipRatio 扩张比例
      * @return 外扩后的多边形顶点数组
      */
-    public static Point[] unclipPolygon(Point[] polygon, double distance) {
+    public static Point[] unclipPolygon(Point[] polygon, double unclipRatio) {
         if (polygon == null || polygon.length < 3) {
             return new Point[0];
         }
+
+        // 计算周长/面积
+        MatOfPoint2f contour2f = new MatOfPoint2f(polygon);
+        double quadPerimeter = Imgproc.arcLength(contour2f, true);
+        double quadArea = Imgproc.contourArea(contour2f);
+        releaseMat(contour2f);
+        // 计算扩张距离
+        // unclip 扩张公式 距离 = 面积 * 扩张比率 / 周长
+        double distance = quadArea * unclipRatio / quadPerimeter;
 
         if (Math.abs(distance) < 1e-6) {
             Point[] result = new Point[polygon.length];
@@ -772,6 +686,101 @@ public class OpenCVUtil {
     }
 
     /**
+     * 扩张算法
+     * @param points 四边形四点坐标
+     * @param unclipRatio 扩张比率
+     * @return 扩张后的四点坐标
+     */
+    public static Point[] unclip(Point[] points, double unclipRatio) {
+        // 1. 创建坐标数组
+        Coordinate[] coords = new Coordinate[5];
+        for (int i = 0; i < 4; i++) {
+            coords[i] = new Coordinate(points[i].x, points[i].y);
+        }
+        coords[4] = coords[0];  // 闭合
+
+        // 2. 创建多边形
+        GeometryFactory factory = new GeometryFactory();
+        Polygon polygon = factory.createPolygon(coords);
+
+        // 3. 计算扩张距离
+        double area = polygon.getArea();
+        double perimeter = polygon.getLength();
+        double distance = area * unclipRatio / perimeter;
+
+        // 4. 缓冲扩张
+        Geometry expanded = polygon.buffer(distance);
+
+        // 5. 提取坐标
+        if (expanded instanceof Polygon) {
+            Polygon expandedPoly = (Polygon) expanded;
+            Coordinate[] expandedCoords = expandedPoly.getExteriorRing().getCoordinates();
+
+            Point[] result = new Point[Math.min(4, expandedCoords.length)];
+            for (int i = 0; i < result.length; i++) {
+                result[i] = new Point(expandedCoords[i].x, expandedCoords[i].y);
+            }
+
+            return result;
+        }
+
+        return points;
+    }
+
+    /**
+     * 基于距离的简单扩张（保持形状）
+     * 使用与官方相同的距离计算公式，但保持形状
+     */
+    public static Point[] unclipByDistance(Point[] points, double unclipRatio) {
+        if (points == null || points.length != 4) {
+            return points;
+        }
+
+        // 1. 计算原始尺寸
+        double width = Math.max(
+                distance(points[0], points[1]),
+                distance(points[2], points[3])
+        );
+        double height = Math.max(
+                distance(points[0], points[3]),
+                distance(points[1], points[2])
+        );
+
+        // 2. 计算面积和周长
+        double area = width * height;
+        double perimeter = 2 * (width + height);
+
+        // 3. 计算扩张距离（与官方公式一致）
+        double distance = area * unclipRatio / perimeter;
+
+        // 4. 计算扩张后的尺寸
+        double newWidth = width + 2 * distance;
+        double newHeight = height + 2 * distance;
+
+        // 5. 计算中心点
+        double cx = (points[0].x + points[1].x + points[2].x + points[3].x) / 4;
+        double cy = (points[0].y + points[1].y + points[2].y + points[3].y) / 4;
+
+        // 6. 计算缩放比例
+        double scaleX = newWidth / width;
+        double scaleY = newHeight / height;
+
+        // 7. 缩放顶点
+        Point[] expanded = new Point[4];
+        for (int i = 0; i < 4; i++) {
+            double dx = points[i].x - cx;
+            double dy = points[i].y - cy;
+            expanded[i] = new Point(
+                    cx + dx * scaleX,
+                    cy + dy * scaleY
+            );
+        }
+
+        return expanded;
+    }
+
+
+    /**
      * 通过矩形顶点获取矩形框尺寸/四边形最大尺寸
      * @param points 矩形四个顶点（已排序）
      * @return Size对象（最大宽度、最大高度）
@@ -810,10 +819,11 @@ public class OpenCVUtil {
 
         // 转换为 MatOfPoint2f
         MatOfPoint2f mat = new MatOfPoint2f(points.toArray());
-        MatOfPoint2f approx = new MatOfPoint2f();
-
+        // 计算周长
+        double perimeter = epsilon * Imgproc.arcLength(mat, true);
         // 执行多边形近似
-        Imgproc.approxPolyDP(mat, approx, epsilon, closed);
+        MatOfPoint2f approx = new MatOfPoint2f();
+        Imgproc.approxPolyDP(mat, approx, perimeter, closed);
 
         // 提取结果
         int total = (int) approx.total();
@@ -822,10 +832,100 @@ public class OpenCVUtil {
             double[] point = approx.get(i, 0);
             result[i] = new Point(point[0], point[1]);
         }
-
         // 释放资源
-        mat.release();
-        approx.release();
+        releaseMat(approx);
+        releaseMat(mat);
+
+        return result;
+    }
+
+    public static Point[] minAreaRect(Point[] points) {
+        // 最终过滤后返回的四边形顶点
+        Point[] quadPoints = new Point[4];
+        // 获取最小外接矩形顶点
+        MatOfPoint2f approx2f = new MatOfPoint2f(points);
+        RotatedRect rr = Imgproc.minAreaRect(approx2f);
+        releaseMat(approx2f);
+        // 设置顶点
+        rr.points(quadPoints);
+        return quadPoints;
+    }
+
+    /**
+     * 检测框按阅读顺序排序（从左到右，从上到下）
+     * @param points 检测框列表，每个框包含4个顶点坐标
+     * @return 排序后的映射（位置索引 -> 四点坐标）
+     */
+    public static Map<Integer, Point[]> orderByRead(List<Point[]> points) {
+        Map<Integer, Point[]> result = new LinkedHashMap<>();
+
+        if (points == null || points.isEmpty()) {
+            return result;
+        }
+
+        int n = points.size();
+
+        // 存储每个框的边界信息
+        double[] minX = new double[n];
+        double[] maxX = new double[n];
+        double[] minY = new double[n];
+        double[] maxY = new double[n];
+
+        for (int i = 0; i < n; i++) {
+            Point[] box = points.get(i);
+            minX[i] = Double.MAX_VALUE;
+            maxX[i] = Double.MIN_VALUE;
+            minY[i] = Double.MAX_VALUE;
+            maxY[i] = Double.MIN_VALUE;
+
+            for (Point p : box) {
+                minX[i] = Math.min(minX[i], p.x);
+                maxX[i] = Math.max(maxX[i], p.x);
+                minY[i] = Math.min(minY[i], p.y);
+                maxY[i] = Math.max(maxY[i], p.y);
+            }
+        }
+
+        // 创建索引并按Y坐标排序
+        Integer[] indices = new Integer[n];
+        for (int i = 0; i < n; i++) indices[i] = i;
+        Arrays.sort(indices, Comparator.comparingDouble(a -> minY[a]));
+
+        // 计算平均高度作为行分组阈值
+        double avgHeight = 0;
+        for (int i = 0; i < n; i++) {
+            avgHeight += (maxY[i] - minY[i]);
+        }
+        avgHeight /= n;
+        double rowThreshold = avgHeight * 0.6;
+
+        // 分组行
+        List<List<Integer>> rows = new ArrayList<>();
+        List<Integer> currentRow = new ArrayList<>();
+        double currentRowY = minY[indices[0]];
+
+        for (int idx : indices) {
+            if (Math.abs(minY[idx] - currentRowY) <= rowThreshold) {
+                currentRow.add(idx);
+            } else {
+                if (!currentRow.isEmpty()) {
+                    rows.add(new ArrayList<>(currentRow));
+                    currentRow.clear();
+                }
+                currentRow.add(idx);
+                currentRowY = minY[idx];
+            }
+        }
+        rows.add(currentRow);
+
+        // 每行内按X坐标排序，构建结果
+        int position = 0;
+        for (List<Integer> row : rows) {
+            row.sort(Comparator.comparingDouble(a -> minX[a]));
+            for (int idx : row) {
+                result.put(position++, points.get(idx));
+            }
+        }
 
         return result;
     }

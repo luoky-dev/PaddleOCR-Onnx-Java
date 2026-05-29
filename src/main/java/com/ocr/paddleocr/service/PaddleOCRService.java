@@ -1,7 +1,7 @@
 package com.ocr.paddleocr.service;
 
 import com.ocr.paddleocr.config.OCRConfig;
-import com.ocr.paddleocr.service.Impl.OCRServiceImpl;
+import com.ocr.paddleocr.service.Impl.PaddleOCRServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -11,37 +11,37 @@ import lombok.extern.slf4j.Slf4j;
  * 2. recognize(config, imagePath) - 使用自定义配置
  */
 @Slf4j
-public class OCRService {
+public class PaddleOCRService {
 
-    private static volatile OCRService instance;
-    private static volatile OCRService customInstance;
+    private static volatile PaddleOCRService instance;
+    private static volatile PaddleOCRService customInstance;
 
-    private final OCRServiceImpl ocrService;
+    private final PaddleOCRServiceImpl ocrService;
 
     /**
      * 私有构造 - 使用默认配置
      */
-    private OCRService() {
-        this.ocrService = OCRServiceImpl.getInstance();
+    private PaddleOCRService() {
+        this.ocrService = PaddleOCRServiceImpl.getInstance();
         log.info("OCR服务初始化完成（默认配置）");
     }
 
     /**
      * 私有构造 - 使用自定义配置
      */
-    private OCRService(OCRConfig config) {
-        this.ocrService = OCRServiceImpl.getInstance(config);
+    private PaddleOCRService(OCRConfig config) {
+        this.ocrService = PaddleOCRServiceImpl.getInstance(config);
         log.info("OCR服务初始化完成（自定义配置）");
     }
 
     /**
      * 获取单例实例（使用默认配置）
      */
-    public static OCRService getInstance() {
+    public static PaddleOCRService getInstance() {
         if (instance == null) {
-            synchronized (OCRService.class) {
+            synchronized (PaddleOCRService.class) {
                 if (instance == null) {
-                    instance = new OCRService();
+                    instance = new PaddleOCRService();
                 }
             }
         }
@@ -51,11 +51,11 @@ public class OCRService {
     /**
      * 获取单例实例（使用自定义配置）
      */
-    public static OCRService getInstance(OCRConfig config) {
+    public static PaddleOCRService getInstance(OCRConfig config) {
         if (customInstance == null) {
-            synchronized (OCRService.class) {
+            synchronized (PaddleOCRService.class) {
                 if (customInstance == null) {
-                    customInstance = new OCRService(config);
+                    customInstance = new PaddleOCRService(config);
                 } else {
                     log.warn("使用自定义配置初始化, 新配置将被忽略");
                 }

@@ -4,27 +4,23 @@ import com.google.gson.Gson;
 import com.ocr.paddleocr.config.OCRConfig;
 import com.ocr.paddleocr.domain.OCRContext;
 import com.ocr.paddleocr.domain.OCRResult;
-import com.ocr.paddleocr.domain.TextBox;
 import com.ocr.paddleocr.domain.Word;
 import com.ocr.paddleocr.process.*;
 import com.ocr.paddleocr.utils.OpenCVUtil;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Set;
 
 /**
  * OCR服务实现类 - 单例模式
  * 负责具体的OCR识别逻辑
  */
 @Slf4j
-public class OCRServiceImpl {
+public class PaddleOCRServiceImpl {
 
-    private static volatile OCRServiceImpl instance;
-    private static volatile OCRServiceImpl customInstance;
+    private static volatile PaddleOCRServiceImpl instance;
+    private static volatile PaddleOCRServiceImpl customInstance;
     private final Gson gson;
     private final ModelManager modelManager;
     private final DetProcessor detProcessor;
@@ -36,14 +32,14 @@ public class OCRServiceImpl {
     /**
      * 私有构造 - 使用默认配置
      */
-    private OCRServiceImpl() {
+    private PaddleOCRServiceImpl() {
         this(OCRConfig.builder().build());
     }
 
     /**
      * 私有构造 - 使用自定义配置
      */
-    private OCRServiceImpl(OCRConfig ocrConfig) {
+    private PaddleOCRServiceImpl(OCRConfig ocrConfig) {
         if (ocrConfig == null) {
             throw new IllegalArgumentException("OCR服务配置不能为空");
         }
@@ -71,11 +67,11 @@ public class OCRServiceImpl {
     /**
      * 获取单例实例（使用默认配置）
      */
-    public static OCRServiceImpl getInstance() {
+    public static PaddleOCRServiceImpl getInstance() {
         if (instance == null) {
-            synchronized (OCRServiceImpl.class) {
+            synchronized (PaddleOCRServiceImpl.class) {
                 if (instance == null) {
-                    instance = new OCRServiceImpl();
+                    instance = new PaddleOCRServiceImpl();
                 }
             }
         }
@@ -85,11 +81,11 @@ public class OCRServiceImpl {
     /**
      * 获取单例实例（使用自定义配置）
      */
-    public static OCRServiceImpl getInstance(OCRConfig config) {
+    public static PaddleOCRServiceImpl getInstance(OCRConfig config) {
         if (customInstance == null) {
-            synchronized (OCRServiceImpl.class) {
+            synchronized (PaddleOCRServiceImpl.class) {
                 if (customInstance == null) {
-                    customInstance = new OCRServiceImpl(config);
+                    customInstance = new PaddleOCRServiceImpl(config);
                 } else {
                     log.warn("OCRServiceImpl已使用自定义配置初始化, 新配置将被忽略");
                 }
@@ -129,7 +125,7 @@ public class OCRServiceImpl {
             // 读取图片
             context.setRawMat(OpenCVUtil.getImage(imagePath));
             log.info("图片读取成功, 当前图片路径: {}", imagePath);
-            // 图像检测和切割
+            // 图像检测
             detProcessor.detect(context);
             if (context.getDetResultBoxes().isEmpty()){
                 return builder
@@ -149,9 +145,6 @@ public class OCRServiceImpl {
             }
             // 检测框识别
             recProcessor.recognize(context);
-            log.info("检测框识别完成, 成功识别检测框数量: {}, 识别时间: {} ms",
-                    context.getRecResultBoxes().size(),
-                    context.getRecProcessTime());
             if (ocrConfig.isUseDebug()) {
                 log.info("Debug模式已启用, 打印中间图像信息到 {} 目录", ocrConfig.getDebugPath());
                 DebugProcessor.printDebugImages(context, ocrConfig, ocrConfig.getDebugPath());
@@ -183,48 +176,7 @@ public class OCRServiceImpl {
             log.error("OCR识别失败: {}", imagePath, e);
             return builder.error(e.getMessage()).build();
         } finally {
-            releaseResources(context);
-        }
-    }
-
-    /**
-     * 释放 OCRContext/TextBox 中持有的所有本地资源
-     */
-    private void releaseResources(OCRContext context) {
-        if (context == null) {
-            return;
-        }
-
-        try {
-            Set<TextBox> visited = Collections.newSetFromMap(new IdentityHashMap<>());
-            releaseTextBoxes(context.getDetResultBoxes(), visited);
-            releaseTextBoxes(context.getClsResultBoxes(), visited);
-            releaseTextBoxes(context.getRecResultBoxes(), visited);
-
             OpenCVUtil.releaseMat(context.getRawMat());
-        } catch (Exception e) {
-            log.warn("释放OCR上下文资源失败", e);
-        } finally {
-            context.setRawMat(null);
-            context.setDetResultBoxes(null);
-            context.setClsResultBoxes(null);
-            context.setRecResultBoxes(null);
-        }
-    }
-
-    private void releaseTextBoxes(List<TextBox> boxes, Set<TextBox> visited) {
-        if (boxes == null) {
-            return;
-        }
-        for (TextBox box : boxes) {
-            if (box == null || !visited.add(box)) {
-                continue;
-            }
-            OpenCVUtil.releaseMat(box.getCropMat());
-            OpenCVUtil.releaseMat(box.getRotMat());
-            box.setCropMat(null);
-            box.setPoints(null);
-            box.setRotMat(null);
         }
     }
 

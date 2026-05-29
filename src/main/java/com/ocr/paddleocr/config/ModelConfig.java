@@ -7,7 +7,7 @@ public class ModelConfig {
     // 检测模型最大边长（paddleOCR官方默认 960）
     private final int detMaxSide = 960;
     // 对齐倍数（paddleOCR官方要求 32 的倍数）
-    private final int detStride = 32;
+    private final int stride = 32;
     // 减均值除方差 (Z-score Normalization)
     // ImageNet RGB均值
     private final float[] scoreMean = {0.485f, 0.456f, 0.406f};
@@ -29,9 +29,7 @@ public class ModelConfig {
     // 方向分类模型输入高度
     private final int clsModelHeight = 48;
     // 角度分类字典
-    private final String[] angleDict = {"0", "180"};
-    // 方向四分类字典
-    private final int[] fallbackAngleMap = {0, 90, 180, 270};
+    private final int[] angleDict = {0, 180};
     // 识别模型输入宽度
     private final int recModelWith = 320;
     // 识别模型输入高度

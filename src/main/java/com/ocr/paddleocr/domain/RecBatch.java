@@ -23,11 +23,6 @@ public class RecBatch {
     private List<TextBox> boxes;
 
     /**
-     * 当前批次内的统一宽度
-     */
-    private int batchWidth;
-
-    /**
      * 当前批次内输入模型尺寸
      */
     private Size modelInputSize;

@@ -4,10 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.opencv.core.Mat;
 import org.opencv.core.Point;
-
-import java.util.List;
 
 @Data
 @Builder
@@ -28,19 +25,7 @@ public class TextBox {
     /**
      * 顶点, 检测到的四边形检测框顶点
      */
-    private List<Point> points;
-
-    private Point[] restorePoints;
-
-    /**
-     * 透视变换裁剪后的矩形检测框图像
-     */
-    private Mat cropMat;
-
-    /**
-     * 分类模型处理旋转后图像信息
-     */
-    private Mat rotMat;
+    private Point[] points;
 
     /**
      * 原检测框方向角度

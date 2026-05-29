@@ -41,12 +41,9 @@ public class OCRConfig implements Serializable {
     // 是否使用启用再检测(适用图片范围: 整图旋转、大图密集文字、大量白边、大量无有效文本区域)
     @Builder.Default
     private boolean useRefineDet = false;
-    // 识别模型固态输入高度
+    // 识别模型最大边长输入
     @Builder.Default
-    private int detModelHeight = 960;
-    // 识别模型固态输入宽度
-    @Builder.Default
-    private int detModelWidth = 960;
+    private int detModelMaxSide = 960;
     // 二值化阈值
     @Builder.Default
     private float detThresh = 0.3f;
@@ -58,13 +55,16 @@ public class OCRConfig implements Serializable {
     private float detUnclipRatio = 1.3f;
     // 检测框最小尺寸过滤（px）
     @Builder.Default
-    private int detMinSize = 3;
+    private int detMinSize = 5;
     // 检测框最小面积过滤
     @Builder.Default
-    private int detMinArea = 5;
+    private int detMinArea = 20;
     // 检测框最大宽高比过滤
     @Builder.Default
     private int detMaxAspectRatio = 20;
+    // 检测框最小宽高比阈值(小于阈值执行旋转操作)
+    @Builder.Default
+    private float detMinAspectRatio = 0.67f;
     // 检测框最低置信度阈值过滤
     @Builder.Default
     private float detBoxThresh = 0.6f;
@@ -80,7 +80,9 @@ public class OCRConfig implements Serializable {
     // 检测框分批处理大小
     @Builder.Default
     private int batchSize = 6;
-
+    // 图像识别阈值
+    @Builder.Default
+    private float recThresh = 0.9f;
     // ==================== 系统参数 ====================
 
     @Builder.Default
@@ -132,8 +134,7 @@ public class OCRConfig implements Serializable {
 
         // 数值参数验证
         // 正整数验证
-        validatePositive("detModelHeight", detModelHeight, errors);   // 检测模型高度
-        validatePositive("detModelWidth", detModelWidth, errors);     // 检测模型宽度
+        validatePositive("detModelMaxSide", detModelMaxSide, errors);   // 检测模型尺寸限制
         validatePositive("detMinSize", detMinSize, errors);           // 最小检测框尺寸
         validatePositive("batchSize", batchSize, errors);             // 批量处理大小
         validatePositive("numThreads", numThreads, errors);           // 线程数

@@ -15,43 +15,37 @@ import java.util.List;
 public class OCRContext {
 
     /**
-     * 处理前的原图像
+     * 原图像
      */
     private Mat rawMat;
 
     /**
-     * 图像检测阶段运行状态
+     * 图像检测运行状态
      */
     private DetState detState;
 
     /**
-     * 图像检测阶段结果检测框
+     * 图像检测结果检测框
      */
     private List<TextBox> detResultBoxes;
 
     /**
-     * cls或rec预处理分组
+     * 分类检测运行状态
      */
     private List<ClsBatch> clsBatches;
 
     /**
-     * 分类检测模型处理结果检测框
+     * 分类检测结果检测框
      */
     private List<TextBox> clsResultBoxes;
 
     /**
-     * 分类检测处理时间（毫秒）
+     * 图像识别运行状态
      */
-    private long clsProcessTime;
+    private List<RecBatch> recBatches;
 
     /**
-     * 识别模型处理结果检测框
+     * 图像识别结果检测框
      */
     private List<TextBox> recResultBoxes;
-
-    /**
-     * 识别模型处理时间（毫秒）
-     */
-    private long recProcessTime;
-
 }

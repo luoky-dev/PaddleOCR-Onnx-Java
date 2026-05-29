@@ -2,12 +2,11 @@ package com.ocr.paddleocr.process;
 
 import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OrtException;
-import ai.onnxruntime.OrtSession;
+import ai.onnxruntime.OrtSession.Result;
 import com.ocr.paddleocr.config.ModelConfig;
 import com.ocr.paddleocr.config.OCRConfig;
 import com.ocr.paddleocr.domain.OCRContext;
 import com.ocr.paddleocr.domain.RecBatch;
-import com.ocr.paddleocr.domain.RecState;
 import com.ocr.paddleocr.domain.TextBox;
 import com.ocr.paddleocr.utils.OnnxUtil;
 import com.ocr.paddleocr.utils.OpenCVUtil;
@@ -15,7 +14,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.opencv.core.Mat;
 import org.opencv.core.Size;
 
+import java.io.IOException;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 public class RecProcessor {
@@ -23,309 +24,247 @@ public class RecProcessor {
     private final ModelManager modelManager;
     private final OCRConfig ocrConfig;
     private final ModelConfig modelConfig;
-    private final List<String> dict;
 
     public RecProcessor(ModelManager modelManager) {
         this.modelManager = modelManager;
         this.ocrConfig = modelManager.getOcrConfig();
         this.modelConfig = modelManager.getModelConfig();
-        this.dict = OpenCVUtil.readDictionary(ocrConfig.getDictPath());
-        log.debug("RecProcessor initialized, modelPath: {}, batchSize: {}, recInputHeight: {}, dictSize: {}",
-                ocrConfig.getRecModelPath(),
-                ocrConfig.getBatchSize(),
-                modelConfig.getRecModelHeight(),
-                dict.size());
     }
 
     public void recognize(OCRContext context) throws OrtException {
         log.info("开始图像识别");
         long startTime = System.currentTimeMillis();
-        List<TextBox> sourceBoxes = ocrConfig.isUseCls()
-                ? context.getClsResultBoxes()
-                : context.getDetResultBoxes();
-
-        RecState state = preprocess(sourceBoxes, context);
-        parse(state);
-        List<TextBox> recResultBoxes = postprocess(state);
-
-        context.setRecResultBoxes(recResultBoxes);
-        context.setRecProcessTime(System.currentTimeMillis() - startTime);
-        log.info("图像识别完成, 耗时: {} ms", context.getRecProcessTime());
+        // 预处理
+        preprocess(context);
+        // 模型推理
+        parse(context);
+        // 后处理
+        postprocess(context);
+        log.info("图像识别完成, 识别成功检测框数量: {}, 耗时: {} ms", context.getRecResultBoxes().size(), System.currentTimeMillis() - startTime);
     }
 
-    private RecState preprocess(List<TextBox> sourceBoxes, OCRContext context) throws OrtException {
+    private void preprocess(OCRContext context) throws OrtException {
         log.info("图像识别 - 预处理阶段");
         long startTime = System.currentTimeMillis();
         // rec模型输入形状和检测框
         List<TextBox> boxes = ocrConfig.isUseCls() ? context.getClsResultBoxes() : context.getDetResultBoxes();
+        // 确定模型输入固定高度
         long[] modelInputShape = OnnxUtil.getModelInputShape(modelManager.getRecSession());
         log.debug("图像识别模型输入形状(-1代表动态输入): Batch: {} x Channel: {} x Height:{} x Width:{} ",
                 modelInputShape[0], modelInputShape[1], modelInputShape[2], modelInputShape[3]);
-        // 确定模型输入尺寸
-        if (modelInputShape[2] != -1 && modelInputShape[3] != -1) {
-            log.info("模型固定输入尺寸");
-        } else if (modelInputShape[2] != -1) {
-            log.info("模型固定高度输入尺寸");
-        } else if (modelInputShape[3] != -1) {
-            log.info("模型固定宽度输入尺寸");
+        if (modelInputShape[2] == -1 || modelInputShape[3] != -1) {
+            log.error("当前暂不支持图像识别模型高度动态或宽度固定输入, 请更换合适的识别模型");
+            throw new RuntimeException("Unsupported recognition model, recognition failed");
         }
-
+        int modelInputH = Math.toIntExact(modelInputShape[2]);
+        log.debug("模型输入图像尺寸: H:{} x W:{} ", modelInputShape[2], modelInputShape[3]);
+        // 透视变换裁剪 + 图像旋转纠正 + 缩放
+        Map<TextBox,Mat> originalOrderMap = new HashMap<>();
+        boxes.forEach(textBox -> {
+            // 裁剪
+            Mat cropMat = OpenCVUtil.perspectiveTransformCrop(context.getRawMat(), textBox.getPoints());
+            log.trace("图像裁剪完成, 裁剪图尺寸: H:{} x W:{} ", cropMat.height(), cropMat.width());
+            // 旋转纠正
+            Mat rotateMat;
+            if (textBox.getAngle() != 0 && textBox.isRotate()) {
+                rotateMat = OpenCVUtil.rotate(cropMat, textBox.getAngle());
+                log.trace("图像按角度旋转纠正完成: {}° -> 0° ", textBox.getAngle());
+            } else {
+                rotateMat = cropMat;
+            }
+            // 缩放到固定高度并转换通道
+            Size fixHeightSize = OpenCVUtil.getFixHeightSize(rotateMat.size(), modelInputH);
+            Mat rgbMat = OpenCVUtil.resizeToRGB(rotateMat, fixHeightSize);
+            log.trace("图像缩放完成: H:{} x W:{} -> H:{} x W:{}",
+                    rotateMat.height(), rotateMat.width(), rgbMat.height(), rgbMat.width());
+            originalOrderMap.put(textBox, rgbMat);
+            OpenCVUtil.releaseMat(cropMat);
+            OpenCVUtil.releaseMat(rotateMat);
+        });
+        // 分组并对齐步长倍数 + padding
         int batchSize = ocrConfig.getBatchSize();
-        boolean dynamicWidth = OnnxUtil.isDynamicWithInput(modelManager.getRecSession());
-        int recHeight = modelConfig.getRecModelHeight();
-        int fixedRecWidth = modelConfig.getRecModelWith();
+        // 转换为List并按宽度排序
+        List<Map.Entry<TextBox, Mat>> orderList = new ArrayList<>(originalOrderMap.entrySet());
+        orderList.sort(Comparator.comparingInt((Map.Entry<TextBox, Mat> a) -> a.getValue().width()).reversed());
+        // 分组
+        List<RecBatch> recBatches = new ArrayList<>();
 
-        List<TextBox> originalOrder = new ArrayList<>(sourceBoxes);
-        List<TextBox> sortedBoxes = new ArrayList<>(sourceBoxes);
-        sortedBoxes.sort(Comparator.comparingDouble(this::getAspectRatio));
+        // 创建子目录
+        String cropDir = ocrConfig.getDebugPath() + "/rec_crops";
+        OpenCVUtil.ensureDir(cropDir);
 
-        List<RecBatch> batches = new ArrayList<>();
-        for (int begin = 0; begin < sortedBoxes.size(); begin += batchSize) {
-            int end = Math.min(begin + batchSize, sortedBoxes.size());
-            List<TextBox> batchBoxes = new ArrayList<>(sortedBoxes.subList(begin, end));
-            int batchWidth = resolveBatchWidth(batchBoxes, recHeight, fixedRecWidth, dynamicWidth);
-            List<float[]> batchChw = preprocessBatch(batchBoxes, recHeight, batchWidth);
-            batches.add(RecBatch.builder().boxes(batchBoxes).batchWidth(batchWidth).chwList(batchChw).build());
-        }
+        int batchCount = 0;
+        for (int batchBegin = 0; batchBegin < orderList.size(); batchBegin += batchSize) {
+            batchCount ++;
+            int batchEnd = Math.min(batchBegin + batchSize, orderList.size());
+            log.debug("分组预处理第 {} 批开始", batchCount);
+            List<TextBox> batchBoxes = new ArrayList<>();
+            List<float[]> chwList = new ArrayList<>();
+            // 组内最大图像尺寸
+            Size maxSize = orderList.get(batchBegin).getValue().size();
+            // 最内宽度向上填充到步长的倍数
+            Size modelInputSize = OpenCVUtil.widthToStride(maxSize, modelConfig.getStride());
+            log.debug("组内最大尺寸: H:{} x W:{}, 组内模型输入尺寸: H:{} x W:{}",
+                    maxSize.height, maxSize.width, modelInputSize.height, modelInputSize.width);
+            for (int index = batchBegin; index < batchEnd; index++) {
+                // 填充
+                Mat srcMat = orderList.get(index).getValue();
+                Mat paddedMat = OpenCVUtil.padding(srcMat, modelInputSize);
+                log.trace("图像填充完成: H:{} x W:{} -> H:{} x W:{}",
+                        srcMat.height(), srcMat.width(), paddedMat.height(), paddedMat.width());
+                // 归一化并转换CHW格式
+                float[] chwData = OpenCVUtil.normalizeToCHW(paddedMat, modelConfig.getLinearMean(), modelConfig.getLinearStd());
+                log.trace("图像归一标准化完成, 均值: {}, 标准差: {}",
+                        Arrays.toString(modelConfig.getLinearMean()),
+                        Arrays.toString(modelConfig.getLinearStd()));
+                chwList.add(chwData);
+                batchBoxes.add(orderList.get(index).getKey());
+                // 资源释放
+                OpenCVUtil.releaseMat(srcMat);
 
-        long elapsed = System.currentTimeMillis() - startTime;
-        log.info("Recognition preprocess done, totalBoxes: {}, totalBatches: {}, dynamicWidth: {}, elapsed: {} ms",
-                sourceBoxes.size(), batches.size(), dynamicWidth, elapsed);
+                String file = String.format(Locale.ROOT, "%s/rec_crop_%03d.jpg", cropDir, index);
+                OpenCVUtil.saveImage(paddedMat, file);
 
-        return new RecState(originalOrder, batches, recHeight);
-    }
-
-    private List<float[]> preprocessBatch(List<TextBox> batchBoxes, int recHeight, int batchWidth) {
-        List<float[]> batchChw = new ArrayList<>(batchBoxes.size());
-        for (TextBox box : batchBoxes) {
-            Mat src = getSourceMat(box);
-            if (src == null || src.empty()) {
-                batchChw.add(new float[3 * recHeight * batchWidth]);
-                continue;
+                OpenCVUtil.releaseMat(paddedMat);
             }
-            batchChw.add(OpenCVUtil.resizeNormalize(src, recHeight, batchWidth));
+            log.debug("分组预处理第 {} 批完成, 本批检测框数量: {}, 统一尺寸: H:{} x W:{}",
+                    batchCount, batchBoxes.size(), modelInputSize.height, modelInputSize.width);
+            recBatches.add(RecBatch.builder()
+                    .chwList(chwList)
+                    .modelInputSize(modelInputSize)
+                    .boxes(batchBoxes)
+                    .build());
         }
-        return batchChw;
+        context.setRecBatches(recBatches);
+        log.info("图像识别预处理完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
     }
 
-    private void parse(RecState state) throws OrtException {
+    private void parse(OCRContext context) throws OrtException {
+        log.info("图像识别 - 模型推理阶段");
         long startTime = System.currentTimeMillis();
-        int batchIndex = 0;
-        int totalSamples = 0;
-
-        for (RecBatch batch : state.getBatches()) {
-            batchIndex++;
-            long batchStart = System.currentTimeMillis();
-
-            batch.setProb(runRecBatchWithRetry(batch.getChwList(), state.getRecHeight(), batch.getBatchWidth(), 0));
-            totalSamples += batch.getProb().length;
-
-            long batchElapsed = System.currentTimeMillis() - batchStart;
-            log.info("Recognition parse batch {}/{} done, batchSize: {}, batchWidth: {}, elapsed: {} ms",
-                    batchIndex, state.getBatches().size(), batch.getBoxes().size(), batch.getBatchWidth(), batchElapsed);
-        }
-
-        long elapsed = System.currentTimeMillis() - startTime;
-        log.info("Recognition parse done, totalBatches: {}, totalSamples: {}, elapsed: {} ms",
-                state.getBatches().size(), totalSamples, elapsed);
-    }
-
-    private List<TextBox> postprocess(RecState state) {
-        long startTime = System.currentTimeMillis();
-        List<TextBox> decodedBoxes = new ArrayList<>(state.getOriginalOrder().size());
-
-        for (RecBatch batch : state.getBatches()) {
-            for (int i = 0; i < batch.getBoxes().size(); i++) {
-                TextBox box = batch.getBoxes().get(i);
-                ctcDecode(box, batch.getProb()[i]);
-                decodedBoxes.add(box);
-            }
-        }
-
-        Map<TextBox, Integer> orderMap = new IdentityHashMap<>();
-        for (int i = 0; i < state.getOriginalOrder().size(); i++) {
-            orderMap.put(state.getOriginalOrder().get(i), i);
-        }
-        decodedBoxes.sort(Comparator.comparingInt(box -> orderMap.getOrDefault(box, Integer.MAX_VALUE)));
-
-        long elapsed = System.currentTimeMillis() - startTime;
-        log.info("Recognition postprocess done, totalBoxes: {}, elapsed: {} ms",
-                decodedBoxes.size(), elapsed);
-        return decodedBoxes;
-    }
-
-    private int resolveBatchWidth(List<TextBox> batchBoxes,
-                                  int recHeight,
-                                  int fixedRecWidth,
-                                  boolean dynamicWidth) {
-        if (!dynamicWidth) {
-            return fixedRecWidth;
-        }
-
-        double maxRatio = 1.0d;
-        for (TextBox box : batchBoxes) {
-            Mat src = getSourceMat(box);
-            if (src == null || src.empty()) {
-                continue;
-            }
-            maxRatio = Math.max(maxRatio, (double) src.cols() / Math.max(1, src.rows()));
-        }
-
-        int rawWidth = (int) Math.ceil(recHeight * maxRatio);
-        return alignWidth(Math.max(modelConfig.getDetStride(), rawWidth), modelConfig.getDetStride());
-    }
-
-    private int alignWidth(int width, int align) {
-        if (align <= 1) {
-            return width;
-        }
-        return ((width + align - 1) / align) * align;
-    }
-
-    private double getAspectRatio(TextBox box) {
-        Mat src = getSourceMat(box);
-        if (src == null || src.empty()) {
-            return Double.MAX_VALUE;
-        }
-        return (double) src.cols() / Math.max(1, src.rows());
-    }
-
-    private Mat getSourceMat(TextBox box) {
-        if (box == null) {
-            return null;
-        }
-        if (box.getRotMat() != null && !box.getRotMat().empty()) {
-            return box.getRotMat();
-        }
-        return box.getCropMat();
-    }
-
-    private float[][][] runRecBatchWithRetry(List<float[]> chwList,
-                                             int recHeight,
-                                             int recWidth,
-                                             int splitDepth) throws OrtException {
-        try (OnnxTensor input = OnnxUtil.createBatchInputTensor(
-                chwList,
-                modelManager.getEnv(),
-                new Size(modelConfig.getRecModelWith(),modelConfig.getRecModelHeight())
-        );
-             OrtSession.Result output = modelManager.getRecSession()
-                     .run(Collections.singletonMap("x", input))) {
-            return OnnxUtil.parseRecOutput(output);
-        } catch (OrtException e) {
-            if (!isCudaOutOfMemory(e) || chwList.size() <= 1) {
+        List<RecBatch> recBatch = context.getRecBatches();
+        int batchCount = 0;
+        for (RecBatch batch : recBatch) {
+            batchCount ++;
+            // 模型解析输入
+            List<float[]> chwList = batch.getChwList();
+            // 模型解析
+            try (OnnxTensor input = OnnxUtil.createBatchInputTensor(chwList, modelManager.getEnv(), batch.getModelInputSize());
+                 Result output = modelManager.getRecSession().run(Collections.singletonMap("x", input))) {
+                // 模型输出
+                float[][][] prob = OnnxUtil.parseRecOutput(output);
+                batch.setProb(prob);
+                log.trace("模型推理第 {}/{} 批完成, 本批检测框数量: {}, 推理字符数: {}, 映射字典数: {}",
+                        batchCount, recBatch.size(), prob.length, prob[0].length, prob[0][0].length);
+            } catch (OrtException e) {
+                log.error("图像识别模型推理失败", e);
                 throw e;
             }
-
-            int mid = chwList.size() / 2;
-            List<float[]> left = new ArrayList<>(chwList.subList(0, mid));
-            List<float[]> right = new ArrayList<>(chwList.subList(mid, chwList.size()));
-
-            log.warn("Recognition batch OOM, split and retry: batchSize={} -> {} + {}, depth={}",
-                    chwList.size(), left.size(), right.size(), splitDepth + 1);
-
-            float[][][] leftProbs = runRecBatchWithRetry(left, recHeight, recWidth, splitDepth + 1);
-            float[][][] rightProbs = runRecBatchWithRetry(right, recHeight, recWidth, splitDepth + 1);
-            return mergeRecProbs(leftProbs, rightProbs);
         }
+        log.info("模型推理阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
+
     }
 
-    private boolean isCudaOutOfMemory(OrtException e) {
-        if (e == null || e.getMessage() == null) {
-            return false;
+    private void postprocess(OCRContext context) {
+        log.info("图像识别 - 后处理解码阶段");
+        long startTime = System.currentTimeMillis();
+        List<RecBatch> recBatch = context.getRecBatches();
+        List<TextBox> recResultBoxes = new ArrayList<>();
+        // 读取字典
+        String[] dict;
+        try {
+            dict = OpenCVUtil.readDictionary(ocrConfig.getDictPath());
+        } catch (IOException e) {
+            log.error("字典读取失败, 图像识别后处理失败");
+            throw new RuntimeException("Read dictionary failed, recognition failed",e);
         }
-        String message = e.getMessage().toLowerCase();
-        return message.contains("out of memory")
-                || message.contains("cuda failure 2")
-                || message.contains("cudnn_status_alloc_failed");
-    }
-
-    private float[][][] mergeRecProbs(float[][][] left, float[][][] right) {
-        float[][][] merged = new float[left.length + right.length][][];
-        System.arraycopy(left, 0, merged, 0, left.length);
-        System.arraycopy(right, 0, merged, left.length, right.length);
-        return merged;
-    }
-
-    private void ctcDecode(TextBox box, float[][] timeSteps) {
-        if (timeSteps == null || timeSteps.length == 0) {
-            log.warn("Recognition decode failed because timeSteps is empty");
-            box.setRecText("");
-            box.setRecConfidence(0.0f);
-            return;
+        // 判断模型输出和字符映射字典是否匹配
+        if (recBatch.get(0).getProb()[0][0].length != dict.length) {
+            log.error("模型输出与字典类型不匹配, 图像识别后处理失败");
+            throw new RuntimeException("String dictionary length is invalid, recognition failed");
         }
-
-        int numClasses = timeSteps[0].length;
-        int dictSize = dict.size();
-        int offset;
-        if (numClasses == dictSize + 1) {
-            offset = -1;
-        } else if (numClasses == dictSize) {
-            offset = 0;
-        } else if (numClasses > dictSize + 1) {
-            offset = -1;
-        } else {
-            offset = 0;
-            log.warn("Recognition output classes {} smaller than dict size {}", numClasses, dictSize);
-        }
-
-        StringBuilder sb = new StringBuilder();
-        float confSum = 0.0f;
-        int confCount = 0;
-        int prev = -1;
-
-        for (float[] step : timeSteps) {
-            int bestIdx = 0;
-            float bestProb = step[0];
-            for (int i = 1; i < step.length; i++) {
-                if (step[i] > bestProb) {
-                    bestProb = step[i];
-                    bestIdx = i;
+        // 按批次解码
+        int batchCount = 0;
+        for (RecBatch batch : recBatch) {
+            batchCount ++;
+            log.debug("当前解码处理第 {}/{} 批次, 本批次检测框数量: {}", batchCount, recBatch.size(), batch.getBoxes().size());
+            // 当前批次的模型输出
+            float[][][] batchProb = batch.getProb();
+            for (int i = 0; i < batch.getBoxes().size(); i++) {
+                log.debug("开始解码第 {} 个检测框", i);
+                // 当前检测框框
+                TextBox box = batch.getBoxes().get(i);
+                // 当前检测框的概率数组
+                float[][] boxProb = batchProb[i];
+                // 获取所有时间步解码结果
+                List<int[]> ctcResult = new ArrayList<>();
+                for (float[] timeStep : boxProb) {
+                    // 解码：返回 [最大概率索引, 编码后的概率值]
+                    int[] decoded = OpenCVUtil.decode(timeStep);
+                    ctcResult.add(decoded);
                 }
-            }
+                log.trace("当前检测框时间步长度: {}", ctcResult.size());
+                log.trace("当前检测框时间步索引: {}",
+                        ctcResult.stream().map(arr -> arr[0]).collect(Collectors.toList()));
+                log.trace("当前检测框时间步概率: {}",
+                        ctcResult.stream().map(arr -> Float.intBitsToFloat(arr[1])).collect(Collectors.toList()));
 
-            if (bestIdx == prev) {
-                continue;
-            }
-            prev = bestIdx;
+                // 去除背景和重复时间步
+                List<int[]> filteredResult = ctcResult.stream()
+                        // 1. 过滤掉 blank token（索引0）
+                        .filter(arr -> {
+                            int maxIdx = arr[0];
+                            return maxIdx != 0;
+                        })
+                        // 2. 去重: 跳过连续相同的索引
+                        .collect(ArrayList::new, (list, item) -> {
+                            if (list.isEmpty()) {
+                                list.add(item);
+                            } else {
+                                int[] last = list.get(list.size() - 1);
+                                int lastIdx = last[0];
+                                int currentIdx = item[0];
+                                // 只添加与上一个不同的索引
+                                if (currentIdx != lastIdx) {
+                                    list.add(item);
+                                }
+                            }
+                        }, ArrayList::addAll);
 
-            if (offset == -1 && bestIdx == modelConfig.getBlankIndex()) {
-                continue;
-            }
+                log.trace("当前检测框时间步过滤后索引: {}",
+                        filteredResult.stream().map(arr -> arr[0]).collect(Collectors.toList()));
+                log.trace("当前检测框时间步过滤后概率: {}",
+                        filteredResult.stream().map(arr -> Float.intBitsToFloat(arr[1])).collect(Collectors.toList()));
 
-            int dictIdx = bestIdx + offset;
-            if (dictIdx < 0 || dictIdx >= dict.size()) {
-                continue;
-            }
+                // 提取最终文本和概率
+                String recText = filteredResult.stream()
+                        .map(arr -> {
+                            int idx = arr[0];
+                            if (idx >= 0 && idx < dict.length) {
+                                return dict[idx];
+                            }
+                            return "";
+                        })
+                        .collect(Collectors.joining());
 
-            sb.append(dict.get(dictIdx));
-            confSum += bestProb;
-            confCount++;
+                // 计算平均概率
+                double confidence = filteredResult.stream()
+                        .mapToDouble(arr -> Float.intBitsToFloat(arr[1]))
+                        .average()
+                        .orElse(0.0);
+
+                log.debug("当前检测框最终识别结果: {}, 置信度: {}", recText, confidence);
+                box.setRecText(recText);
+                box.setRecConfidence(confidence > 0 ? (float) confidence : 0.0f);
+                recResultBoxes.add(box);
+            }
         }
-
-        box.setRecText(sb.toString().trim());
-        box.setRecConfidence(confCount > 0 ? (confSum / confCount) : 0.0f);
+        // 按index阅读顺序重新排列
+        recResultBoxes.sort(Comparator.comparing(TextBox::getIndex));
+        context.setRecResultBoxes(recResultBoxes);
+        log.info("后处理解码阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
     }
 
-
-    /**
-     * 按检测框高度聚类
-     * @param boxes 检测框列表
-     * @param strideSize 分组间隔
-     * @return 按高度分组的Map, Key为高度区间起始值
-     */
-    private Map<Integer,List<TextBox>> heightGroup(List<TextBox> boxes,int strideSize) {
-        Map<Integer, List<TextBox>> heightGroups = new HashMap<>();
-        for (TextBox box : boxes) {
-            // 检测框的高度
-            int height = box.getCropMat().height();
-            // 计算分组key, 向上取整到strideSize的倍数
-            int groupKey = ((height + strideSize - 1) / strideSize) * strideSize;
-            // 将检测框添加到对应分组
-            heightGroups.computeIfAbsent(groupKey, k -> new ArrayList<>()).add(box);
-        }
-        return heightGroups;
-    }
 }
 
 

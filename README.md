@@ -46,7 +46,7 @@ PaddleOCR-Onnx-Java 是一个面向 Java 业务系统的 OCR 推理组件。
 
 ```java
 import com.ocr.paddleocr.config.OCRConfig;
-import com.ocr.paddleocr.service.OCRService;
+import com.ocr.paddleocr.service.PaddleOCRService;
 
 public class Demo {
     public static void main(String[] args) {
@@ -62,7 +62,7 @@ public class Demo {
                 .gpuId(0)
                 .build();
 
-        String resultJson = OCRService.recognize(config, "test/chi_test.jpg");
+        String resultJson = PaddleOCRService.recognize(config, "test/chi_test.jpg");
         System.out.println(resultJson);
     }
 }

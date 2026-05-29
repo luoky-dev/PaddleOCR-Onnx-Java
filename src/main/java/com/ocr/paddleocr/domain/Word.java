@@ -5,7 +5,6 @@ import lombok.Data;
 import org.opencv.core.Point;
 
 import java.io.Serializable;
-import java.util.List;
 
 @Data
 @Builder
@@ -16,7 +15,7 @@ public class Word implements Serializable {
     /**
      * 文本框四个顶点
      */
-    private List<Point> box;
+    private Point[] box;
 
     /**
      * 识别的文本内容

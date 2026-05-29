@@ -8,7 +8,6 @@ import ai.onnxruntime.OrtException;
 import ai.onnxruntime.OrtSession;
 import ai.onnxruntime.OrtSession.Result;
 import ai.onnxruntime.TensorInfo;
-import org.opencv.core.Mat;
 import org.opencv.core.Size;
 
 import java.nio.FloatBuffer;
@@ -16,38 +15,6 @@ import java.util.List;
 import java.util.Map;
 
 public class OnnxUtil {
-
-    /**
-     * 判断模型是否是动态图像尺寸输入
-     * @param session ONNX Runtime 会话
-     * @return true 是动态输入
-     * @throws OrtException 异常信息
-     */
-    public static Boolean isDynamicImageInput(OrtSession session) throws OrtException {
-        return isDynamicHeightInput(session) && isDynamicWithInput(session);
-    }
-
-    /**
-     * 判断模型是否是图像动态高度尺寸输入
-     * @param session ONNX Runtime 会话
-     * @return true 是动态高度输入
-     * @throws OrtException 异常信息
-     */
-    public static Boolean isDynamicHeightInput(OrtSession session) throws OrtException {
-        long[] inputShape = getModelInputShape(session);
-        return inputShape[2] == -1;
-    }
-
-    /**
-     * 判断模型是否是图像动态宽度尺寸输入
-     * @param session ONNX Runtime 会话
-     * @return true 是动态宽度输入
-     * @throws OrtException 异常信息
-     */
-    public static Boolean isDynamicWithInput(OrtSession session) throws OrtException {
-        long[] inputShape = getModelInputShape(session);
-        return inputShape[3] == -1;
-    }
 
     /**
      * 从 ONNX Runtime 会话中提取模型的输入张量形状
@@ -84,33 +51,6 @@ public class OnnxUtil {
     }
 
     /**
-     * 创建单张输入 Tensor
-     */
-    public static OnnxTensor createInputTensor(Mat image, OrtEnvironment env) throws OrtException {
-        int height = image.rows();
-        int width = image.cols();
-        int channels = image.channels();
-
-        float[] chwData = new float[channels * height * width];
-        float[] data = new float[channels * height * width];
-        image.get(0, 0, data);
-
-        // 转换为CHW格式
-        for (int c = 0; c < channels; c++) {
-            for (int h = 0; h < height; h++) {
-                for (int w = 0; w < width; w++) {
-                    int chwIndex = (c * height + h) * width + w;
-                    int hwcIndex = (h * width + w) * channels + c;
-                    chwData[chwIndex] = data[hwcIndex];
-                }
-            }
-        }
-
-        long[] shape = {1, channels, height, width};
-        return OnnxTensor.createTensor(env, FloatBuffer.wrap(chwData), shape);
-    }
-
-    /**
      * 创建批量输入 Tensor
      */
     public static OnnxTensor createBatchInputTensor(List<float[]> chwList,
@@ -125,20 +65,6 @@ public class OnnxUtil {
         for (int i = 0; i < batch; i++) {
             System.arraycopy(chwList.get(i), 0, data, i * one, one);
         }
-        long[] shape = {batch, channels, height, width};
-        return OnnxTensor.createTensor(env, FloatBuffer.wrap(data), shape);
-    }
-
-    public static OnnxTensor createInputTensor(OrtEnvironment env, float[] data, long[] shape) throws OrtException {
-        return OnnxTensor.createTensor(env, FloatBuffer.wrap(data), shape);
-    }
-
-    public static OnnxTensor createBatchInputTensor(float[] data,
-                                                    int batch,
-                                                    OrtEnvironment env,
-                                                    int channels,
-                                                    int height,
-                                                    int width) throws OrtException {
         long[] shape = {batch, channels, height, width};
         return OnnxTensor.createTensor(env, FloatBuffer.wrap(data), shape);
     }
