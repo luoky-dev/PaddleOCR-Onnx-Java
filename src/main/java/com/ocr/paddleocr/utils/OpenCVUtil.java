@@ -1,9 +1,5 @@
 package com.ocr.paddleocr.utils;
 
-import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.Geometry;
-import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.Polygon;
 import org.opencv.core.*;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
@@ -19,14 +15,14 @@ public class OpenCVUtil {
 
 
     // 预定义颜色（BGR格式）
-    private static final Scalar COLOR_RED = new Scalar(0, 0, 255);
-    private static final Scalar COLOR_GREEN = new Scalar(0, 255, 0);
-    private static final Scalar COLOR_BLUE = new Scalar(255, 0, 0);
-    private static final Scalar COLOR_YELLOW = new Scalar(0, 255, 255);
-    private static final Scalar COLOR_CYAN = new Scalar(255, 255, 0);
-    private static final Scalar COLOR_MAGENTA = new Scalar(255, 0, 255);
-    private static final Scalar COLOR_WHITE = new Scalar(255, 255, 255);
-    private static final Scalar COLOR_BLACK = new Scalar(0, 0, 0);
+    public static final Scalar COLOR_RED = new Scalar(0, 0, 255);
+    public static final Scalar COLOR_GREEN = new Scalar(0, 255, 0);
+    public static final Scalar COLOR_BLUE = new Scalar(255, 0, 0);
+    public static final Scalar COLOR_YELLOW = new Scalar(0, 255, 255);
+    public static final Scalar COLOR_CYAN = new Scalar(255, 255, 0);
+    public static final Scalar COLOR_MAGENTA = new Scalar(255, 0, 255);
+    public static final Scalar COLOR_WHITE = new Scalar(255, 255, 255);
+    public static final Scalar COLOR_BLACK = new Scalar(0, 0, 0);
 
     /**
      * 在图像上绘制检测框
@@ -37,7 +33,7 @@ public class OpenCVUtil {
      * @param thickness 线条粗细
      * @return 绘制后的图像（克隆，不影响原图）
      */
-    public static Mat drawBoxes(Mat image, List<List<Point>> boxes, Scalar color, int thickness) {
+    public static Mat drawBoxes(Mat image, List<Point[]> boxes, Scalar color, int thickness) {
         if (image == null || image.empty()) {
             return null;
         }
@@ -50,8 +46,8 @@ public class OpenCVUtil {
         Mat result = image.clone();
 
         for (int i = 0; i < boxes.size(); i++) {
-            List<Point> box = boxes.get(i);
-            if (box == null || box.size() < 4) {
+            Point[] box = boxes.get(i);
+            if (box == null || box.length < 4) {
                 continue;
             }
 
@@ -59,8 +55,8 @@ public class OpenCVUtil {
             drawPolygon(result, box, color, thickness);
 
             // 可选：绘制序号
-            Point center = getCenter(box);
-            putText(result, String.valueOf(i + 1), center, color);
+//            Point center = getCenter(box);
+//            putText(result, String.valueOf(i + 1), center, color);
         }
 
         return result;
@@ -69,21 +65,18 @@ public class OpenCVUtil {
     /**
      * 在图像上绘制检测框（使用默认颜色和粗细）
      */
-    public static Mat drawBoxes(Mat image, List<List<Point>> boxes) {
+    public static Mat drawBoxes(Mat image, List<Point[]> boxes) {
         return drawBoxes(image, boxes, COLOR_GREEN, 2);
     }
 
     /**
      * 绘制多边形
      */
-    public static void drawPolygon(Mat image, List<Point> points, Scalar color, int thickness) {
-        if (points == null || points.size() < 3) {
-            return;
-        }
+    public static void drawPolygon(Mat image, Point[] points, Scalar color, int thickness) {
 
         // 将点转换为 MatOfPoint
         MatOfPoint matOfPoint = new MatOfPoint();
-        matOfPoint.fromList(points);
+        matOfPoint.fromArray(points);
 
         // 绘制多边形轮廓
         Imgproc.polylines(image, Collections.singletonList(matOfPoint),
@@ -92,7 +85,7 @@ public class OpenCVUtil {
         OpenCVUtil.releaseMat(matOfPoint);
     }
 
-    public static void drawPolygon(Mat image, List<Point> points) {
+    public static void drawPolygon(Mat image, Point[] points) {
         drawPolygon(image, points, COLOR_GREEN, 2);
     }
 
@@ -137,10 +130,7 @@ public class OpenCVUtil {
         for (RotatedRect rect : rects) {
             Point[] vertices = new Point[4];
             rect.points(vertices);
-
-            // 将顶点转换为列表
-            List<Point> points = Arrays.asList(vertices);
-            drawPolygon(result, points, color, thickness);
+            drawPolygon(result, vertices, color, thickness);
         }
 
         return result;
@@ -149,8 +139,8 @@ public class OpenCVUtil {
     /**
      * 获取多边形中心点
      */
-    private static Point getCenter(List<Point> points) {
-        if (points == null || points.isEmpty()) {
+    private static Point getCenter(Point[] points) {
+        if (points == null) {
             return new Point(0, 0);
         }
 
@@ -159,7 +149,7 @@ public class OpenCVUtil {
             sumX += p.x;
             sumY += p.y;
         }
-        return new Point(sumX / points.size(), sumY / points.size());
+        return new Point(sumX / points.length, sumY / points.length);
     }
 
     /**
@@ -235,7 +225,7 @@ public class OpenCVUtil {
         BufferedReader br = new BufferedReader(
                 new InputStreamReader(new FileInputStream(dictPath), StandardCharsets.UTF_8));
         String line;
-        // 开始添加blank token
+        // 开始添加background token
         dictList.add("");
         while ((line = br.readLine()) != null) {
             dictList.add(line);
@@ -290,6 +280,27 @@ public class OpenCVUtil {
     }
 
     /**
+     * 将指定区域置空
+     * @param srcMat 原始图像
+     * @param points 区域顶点坐标
+     */
+    public static void fillPolyWhite(Mat srcMat, Point[] points) {
+        if (srcMat == null || points == null || points.length < 3) {
+            return;
+        }
+
+        // 1. 将顶点转换为MatOfPoint
+        MatOfPoint matOfPoint = new MatOfPoint(points);
+        List<MatOfPoint> polygons = List.of(matOfPoint);
+
+        // 2. 填充白色
+        Imgproc.fillPoly(srcMat, polygons, COLOR_WHITE);
+
+        // 3. 释放资源
+        matOfPoint.release();
+    }
+
+    /**
      * 计算两点间距离
      */
     public static double distance(Point p1, Point p2) {
@@ -307,13 +318,35 @@ public class OpenCVUtil {
         if (points == null || points.length != 4) {
             return points;
         }
-        // 计算中心点
+
+        // 1. 计算中心点
         double cx = (points[0].x + points[1].x + points[2].x + points[3].x) / 4;
         double cy = (points[0].y + points[1].y + points[2].y + points[3].y) / 4;
-        // 按角度排序
+
+        // 2. 按角度排序
         List<Point> orderPoints = new ArrayList<>(Arrays.asList(points));
         orderPoints.sort(Comparator.comparingDouble(p -> Math.atan2(p.y - cy, p.x - cx)));
-        return orderPoints.toArray(new Point[4]);
+
+        // 3. 将起始点旋转到左上角
+        // 计算每个点的 x+y 值，最小的通常是左上角
+        int leftTopIndex = 0;
+        double minSum = orderPoints.get(0).x + orderPoints.get(0).y;
+        for (int i = 1; i < 4; i++) {
+            Point p = orderPoints.get(i);
+            double sum = p.x + p.y;
+            if (sum < minSum) {
+                minSum = sum;
+                leftTopIndex = i;
+            }
+        }
+
+        // 4. 重新排列，从左上角开始
+        Point[] result = new Point[4];
+        for (int i = 0; i < 4; i++) {
+            result[i] = orderPoints.get((leftTopIndex + i) % 4);
+        }
+
+        return result;
     }
 
     /**
@@ -525,41 +558,6 @@ public class OpenCVUtil {
     }
 
     /**
-     * 根据四点坐标计算四边形面积
-     * @param points 四点坐标（顺序不限，但建议连续）
-     * @return 面积
-     */
-    public static double getArea(Point[] points) {
-        if (points == null || points.length != 4) {
-            return 0.0;
-        }
-
-        // 使用鞋带公式（Shoelace formula）
-        double sum = 0.0;
-        for (int i = 0; i < points.length; i++) {
-            Point p1 = points[i];
-            Point p2 = points[(i + 1) % points.length];
-            sum += p1.x * p2.y - p2.x * p1.y;
-        }
-
-        return Math.abs(sum) / 2.0;
-    }
-
-    /**
-     * 计算多边形周长
-     */
-    private static double getPerimeter(Point[] points) {
-        double perimeter = 0;
-        int n = points.length;
-        for (int i = 0; i < n; i++) {
-            Point p1 = points[i];
-            Point p2 = points[(i + 1) % n];
-            perimeter += Math.hypot(p2.x - p1.x, p2.y - p1.y);
-        }
-        return perimeter;
-    }
-
-    /**
      * 计算轮廓内平均置信度
      *
      * @param contour 轮廓
@@ -610,133 +608,17 @@ public class OpenCVUtil {
     }
 
     /**
-     * 多边形外扩（Unclip）
-     * @param polygon 原始多边形顶点数组
+     * 基于边平移的扩张
+     * @param points 轮廓框顶点
      * @param unclipRatio 扩张比例
-     * @return 外扩后的多边形顶点数组
-     */
-    public static Point[] unclipPolygon(Point[] polygon, double unclipRatio) {
-        if (polygon == null || polygon.length < 3) {
-            return new Point[0];
-        }
-
-        // 计算周长/面积
-        MatOfPoint2f contour2f = new MatOfPoint2f(polygon);
-        double quadPerimeter = Imgproc.arcLength(contour2f, true);
-        double quadArea = Imgproc.contourArea(contour2f);
-        releaseMat(contour2f);
-        // 计算扩张距离
-        // unclip 扩张公式 距离 = 面积 * 扩张比率 / 周长
-        double distance = quadArea * unclipRatio / quadPerimeter;
-
-        if (Math.abs(distance) < 1e-6) {
-            Point[] result = new Point[polygon.length];
-            for (int i = 0; i < polygon.length; i++) {
-                result[i] = polygon[i].clone();
-            }
-            return result;
-        }
-
-        int n = polygon.length;
-
-        // 1. 计算每条边的外扩向量
-        double[][] moveVecs = new double[n][2];
-
-        for (int i = 0; i < n; i++) {
-            Point p1 = polygon[i];
-            Point p2 = polygon[(i + 1) % n];
-
-            // 计算边的方向向量
-            double dx = p2.x - p1.x;
-            double dy = p2.y - p1.y;
-            double length = Math.hypot(dx, dy);
-
-            if (length < 1e-6) {
-                moveVecs[i][0] = 0;
-                moveVecs[i][1] = 0;
-                continue;
-            }
-
-            // 单位方向向量
-            double ux = dx / length;
-            double uy = dy / length;
-
-            // 计算垂直单位方向并扩张
-            moveVecs[i][0] = -uy * distance;
-            moveVecs[i][1] = ux * distance;
-        }
-
-        // 2. 计算新顶点位置
-        Point[] expanded = new Point[n];
-
-        for (int i = 0; i < n; i++) {
-            double[] move1 = moveVecs[i];
-            double[] move2 = moveVecs[(i + 1) % n];
-
-            Point p = polygon[(i + 1) % n];
-
-            // 两条边的扩张向量之和
-            double newX = p.x + move1[0] + move2[0];
-            double newY = p.y + move1[1] + move2[1];
-
-            expanded[i] = new Point(newX, newY);
-        }
-
-        return expanded;
-    }
-
-    /**
-     * 扩张算法
-     * @param points 四边形四点坐标
-     * @param unclipRatio 扩张比率
-     * @return 扩张后的四点坐标
+     * @return 扩张后顶点
      */
     public static Point[] unclip(Point[] points, double unclipRatio) {
-        // 1. 创建坐标数组
-        Coordinate[] coords = new Coordinate[5];
-        for (int i = 0; i < 4; i++) {
-            coords[i] = new Coordinate(points[i].x, points[i].y);
-        }
-        coords[4] = coords[0];  // 闭合
-
-        // 2. 创建多边形
-        GeometryFactory factory = new GeometryFactory();
-        Polygon polygon = factory.createPolygon(coords);
-
-        // 3. 计算扩张距离
-        double area = polygon.getArea();
-        double perimeter = polygon.getLength();
-        double distance = area * unclipRatio / perimeter;
-
-        // 4. 缓冲扩张
-        Geometry expanded = polygon.buffer(distance);
-
-        // 5. 提取坐标
-        if (expanded instanceof Polygon) {
-            Polygon expandedPoly = (Polygon) expanded;
-            Coordinate[] expandedCoords = expandedPoly.getExteriorRing().getCoordinates();
-
-            Point[] result = new Point[Math.min(4, expandedCoords.length)];
-            for (int i = 0; i < result.length; i++) {
-                result[i] = new Point(expandedCoords[i].x, expandedCoords[i].y);
-            }
-
-            return result;
-        }
-
-        return points;
-    }
-
-    /**
-     * 基于距离的简单扩张（保持形状）
-     * 使用与官方相同的距离计算公式，但保持形状
-     */
-    public static Point[] unclipByDistance(Point[] points, double unclipRatio) {
         if (points == null || points.length != 4) {
             return points;
         }
 
-        // 1. 计算原始尺寸
+        // 1. 计算尺寸、面积、周长
         double width = Math.max(
                 distance(points[0], points[1]),
                 distance(points[2], points[3])
@@ -745,40 +627,65 @@ public class OpenCVUtil {
                 distance(points[0], points[3]),
                 distance(points[1], points[2])
         );
-
-        // 2. 计算面积和周长
         double area = width * height;
         double perimeter = 2 * (width + height);
 
-        // 3. 计算扩张距离（与官方公式一致）
+        // 2. 计算扩张距离（敏感于 unclipRatio）
         double distance = area * unclipRatio / perimeter;
 
-        // 4. 计算扩张后的尺寸
-        double newWidth = width + 2 * distance;
-        double newHeight = height + 2 * distance;
+        // 存储平移后的直线系数 [a, b, c]
+        double[][] lines = new double[4][3];
 
-        // 5. 计算中心点
-        double cx = (points[0].x + points[1].x + points[2].x + points[3].x) / 4;
-        double cy = (points[0].y + points[1].y + points[2].y + points[3].y) / 4;
+        for (int i = 0; i < 4; i++) {
+            Point p1 = points[i];
+            Point p2 = points[(i + 1) % 4];
 
-        // 6. 计算缩放比例
-        double scaleX = newWidth / width;
-        double scaleY = newHeight / height;
+            // 计算法向量
+            double dx = p2.x - p1.x;
+            double dy = p2.y - p1.y;
+            double len = Math.hypot(dx, dy);
 
-        // 7. 缩放顶点
+            double nx = -dy / len;
+            double ny = dx / len;
+
+            // 验证向外方向
+            double cx = (p1.x + p2.x) / 2;
+            double cy = (p1.y + p2.y) / 2;
+            double centerX = (points[0].x + points[1].x + points[2].x + points[3].x) / 4;
+            double centerY = (points[0].y + points[1].y + points[2].y + points[3].y) / 4;
+
+            if (nx * (cx - centerX) + ny * (cy - centerY) < 0) {
+                nx = -nx;
+                ny = -ny;
+            }
+
+            // 平移后的直线: a*x + b*y = c
+            lines[i][0] = nx;
+            lines[i][1] = ny;
+            lines[i][2] = nx * p1.x + ny * p1.y + distance;
+        }
+
+        // 计算交点
         Point[] expanded = new Point[4];
         for (int i = 0; i < 4; i++) {
-            double dx = points[i].x - cx;
-            double dy = points[i].y - cy;
-            expanded[i] = new Point(
-                    cx + dx * scaleX,
-                    cy + dy * scaleY
-            );
+
+            double[] l1 = lines[i];
+            double[] l2 = lines[(i + 1) % 4];
+
+            double det = l1[0] * l2[1] - l2[0] * l1[1];
+            if (Math.abs(det) < 1e-6) {
+                expanded[(i + 1) % 4] = points[(i + 1) % 4];
+                continue;
+            }
+
+            double x = (l1[2] * l2[1] - l2[2] * l1[1]) / det;
+            double y = (l1[0] * l2[2] - l2[0] * l1[2]) / det;
+
+            expanded[(i + 1) % 4] = new Point(x, y);
         }
 
         return expanded;
     }
-
 
     /**
      * 通过矩形顶点获取矩形框尺寸/四边形最大尺寸
@@ -806,7 +713,7 @@ public class OpenCVUtil {
     }
 
     /**
-     * 多边形近似（Douglas-Peucker算法）
+     * 多边形近似算法
      * @param points 原始多边形顶点数组
      * @param epsilon 近似精度（越小越接近原形状，越大简化越多）
      * @param closed 是否为闭合多边形

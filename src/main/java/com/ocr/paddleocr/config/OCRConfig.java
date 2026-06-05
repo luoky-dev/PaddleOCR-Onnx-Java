@@ -21,15 +21,15 @@ public class OCRConfig implements Serializable {
     // ==================== 模型路径配置 ====================
 
     @Builder.Default
-    private String detModelPath = "src/main/java/resources/models/chi/det_model.onnx";
+    private String detModelPath = "";
     @Builder.Default
-    private String clsModelPath = "src/main/java/resources/models/chi/cls_model.onnx";
+    private String clsModelPath = "";
     @Builder.Default
-    private String recModelPath = "src/main/java/resources/models/chi/rec_model.onnx";
+    private String recModelPath = "";
     @Builder.Default
-    private String dictPath = "src/main/java/resources/models/chi/ppocr_keys_v1.txt";
+    private String dictPath = "";
     @Builder.Default
-    private String debugPath = "src/main/java/resources/test/output";
+    private String debugPath = "";
     // 是否启用分类检测模型
     @Builder.Default
     private boolean useCls = false;
@@ -38,39 +38,36 @@ public class OCRConfig implements Serializable {
     private boolean useDebug = false;
     // ==================== 检测模型参数 ====================
 
-    // 是否使用启用再检测(适用图片范围: 整图旋转、大图密集文字、大量白边、大量无有效文本区域)
-    @Builder.Default
-    private boolean useRefineDet = false;
     // 识别模型最大边长输入
     @Builder.Default
     private int detModelMaxSide = 960;
     // 二值化阈值
     @Builder.Default
-    private float detThresh = 0.3f;
+    private float bitThresh = 0.3f;
     // 是否使用膨胀
     @Builder.Default
     private boolean isDilation = false;
+    // 腐蚀度
+    @Builder.Default
+    private final float epsilon = 0.002f;
     // unclip 扩张比率
     @Builder.Default
-    private float detUnclipRatio = 1.3f;
-    // 检测框最小尺寸过滤（px）
+    private float unclipRatio = 1.3f;
+    // 检测框数量限制
     @Builder.Default
-    private int detMinSize = 5;
+    private int boxLimit = 1000;
+    // 检测框最小尺寸过滤
+    @Builder.Default
+    private int boxMinSize = 5;
     // 检测框最小面积过滤
     @Builder.Default
-    private int detMinArea = 20;
-    // 检测框最大宽高比过滤
-    @Builder.Default
-    private int detMaxAspectRatio = 20;
+    private int boxMinArea = 20;
     // 检测框最小宽高比阈值(小于阈值执行旋转操作)
     @Builder.Default
-    private float detMinAspectRatio = 0.67f;
+    private float boxMinAspectRatio = 0.67f;
     // 检测框最低置信度阈值过滤
     @Builder.Default
-    private float detBoxThresh = 0.6f;
-    // 是否返回多边形检测框使用多边裁剪（false返回矩形）
-    @Builder.Default
-    private boolean detUsePolygon = false;
+    private float boxThresh = 0.6f;
 
     // ==================== 方向分类参数 ====================
 
@@ -83,6 +80,7 @@ public class OCRConfig implements Serializable {
     // 图像识别阈值
     @Builder.Default
     private float recThresh = 0.9f;
+
     // ==================== 系统参数 ====================
 
     @Builder.Default
@@ -135,17 +133,19 @@ public class OCRConfig implements Serializable {
         // 数值参数验证
         // 正整数验证
         validatePositive("detModelMaxSide", detModelMaxSide, errors);   // 检测模型尺寸限制
-        validatePositive("detMinSize", detMinSize, errors);           // 最小检测框尺寸
+        validatePositive("detMinSize", boxMinSize, errors);           // 最小检测框尺寸
         validatePositive("batchSize", batchSize, errors);             // 批量处理大小
         validatePositive("numThreads", numThreads, errors);           // 线程数
+        validatePositive("boxLimit", boxLimit, errors);           // 检测框数量限制
 
         // 范围验证 [0, 1]
-        validateRange01("detThresh", detThresh, errors);              // 检测阈值
-        validateRange01("detBoxThresh", detBoxThresh, errors);        // 检测框置信度阈值
+        validateRange01("detThresh", bitThresh, errors);              // 检测阈值
+        validateRange01("detBoxThresh", boxThresh, errors);        // 检测框置信度阈值
         validateRange01("clsThresh", clsThresh, errors);              // 分类置信度阈值
 
         // 正有限数验证
-        validateFinitePositive("detUnclipRatio", detUnclipRatio, errors);  // Unclip扩张比例
+        validateFinitePositive("detUnclipRatio", unclipRatio, errors);  // Unclip扩张比例
+        validateFinitePositive("epsilon", epsilon, errors);  // 腐蚀度
 
         // GPU参数验证
         if (gpuId < 0) {

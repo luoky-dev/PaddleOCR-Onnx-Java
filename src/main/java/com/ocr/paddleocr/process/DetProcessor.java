@@ -139,31 +139,14 @@ public class DetProcessor {
             context.setDetResultBoxes(List.of());
         }
         // 限制候选框数量
-        if (contours.size() > modelConfig.getMaxCandidates()) {
-            contours = new ArrayList<>(contours.subList(0, modelConfig.getMaxCandidates()));
-            log.debug("轮廓数量超过限制({}), 截取前{}个",
-                    modelConfig.getMaxCandidates(), modelConfig.getMaxCandidates());
+        if (contours.size() > ocrConfig.getBoxLimit()) {
+            contours = new ArrayList<>(contours.subList(0, ocrConfig.getBoxLimit()));
+            log.debug("超过轮廓框数量限制, 保留前 {} 个", ocrConfig.getBoxLimit());
         }
         // 轮廓解析计算
         parseContours(contours, probMat, detState);
-        // 结果过滤
-        List<ContourBox> boxes = detState.getContourBoxes();
-        long areaFilterCount = boxes.stream()
-                .filter(ContourBox::isAreaFilter).count();
-        long scoreFilterCount = boxes.stream()
-                .filter(ContourBox::isScoreFilter).count();
-        long approxFilterCount = boxes.stream()
-                .filter(ContourBox::isApproxFail).count();
-        long sizeFilterCount = boxes.stream()
-                .filter(ContourBox::isMinSizeFilter).count();
-        long aspectRatioFilterCount = boxes.stream()
-                .filter(ContourBox::isAspectRatioFilter).count();
-        long expandFilterCount = boxes.stream()
-                .filter(ContourBox::isUnclipFail).count();
-        // 创建子目录
-        String cropDir = ocrConfig.getDebugPath() + "/det_crops";
-        OpenCVUtil.ensureDir(cropDir);
         // 按阅读顺序对检测框排序
+        List<ContourBox> boxes = detState.getContourBoxes();
         Map<Integer, Point[]> orderMap = OpenCVUtil.orderByRead(
                 boxes.stream()
                         .map(ContourBox::getRestorePoints)
@@ -177,20 +160,15 @@ public class DetProcessor {
                         index(index).
                         points(points).
                         build()));
-        orderMap.forEach( (index, points) -> {
-            // 裁剪
-            Mat cropMat = OpenCVUtil.perspectiveTransformCrop(context.getRawMat(), points);
-            String file = String.format(Locale.ROOT, "%s/det_crop_%03d.jpg", cropDir, index);
-            OpenCVUtil.saveImage(cropMat, file);
-        });
-
         context.setDetResultBoxes(textBoxes);
         // 资源释放
         OpenCVUtil.releaseMat(probMat);
         // 输出统计信息
-        log.debug("检测框统计 - 总轮廓框: {}, 有效检测框: {}", contours.size(), orderMap.size());
-        log.debug("过滤统计 - 面积不足过滤: {}, 平均置信度不足过滤: {}, 多边近似失败: {}, 最大宽高比过滤: {}, 最小尺寸过滤: {}, 扩边失败: {}, ",
-                areaFilterCount, scoreFilterCount, approxFilterCount, aspectRatioFilterCount, sizeFilterCount, expandFilterCount);
+        log.info("结果统计 - 总轮廓框: {}, 有效检测框: {}", contours.size(), orderMap.size());
+        log.info("过滤统计 - 噪声框过滤: {}, 置信度不足过滤: {}, 多边近似失败过滤: {}",
+                boxes.stream().filter(ContourBox::isNoiseFilter).count(),
+                boxes.stream().filter(ContourBox::isScoreFilter).count(),
+                boxes.stream().filter(ContourBox::isApproxFilter).count());
         log.info("后处理检测框提取阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
     }
 
@@ -199,16 +177,16 @@ public class DetProcessor {
      */
     private List<MatOfPoint> findContours(Mat probMat){
         log.debug("开始轮廓检测");
-        // 二值化，概率图 > 阈值 的区域为文本区域
-        float detThresh = ocrConfig.getDetThresh();
+        // 1.二值化: 概率图 > 阈值 的区域为文本区域
+        float detThresh = ocrConfig.getBitThresh();
         Mat bitmap = new Mat();
         Imgproc.threshold(probMat, bitmap, detThresh, 255, Imgproc.THRESH_BINARY);
         log.debug("二值化完成, 阈值: {}", detThresh);
 
-        // 转换为 8位 单通道
+        // 2.转换为 8位 单通道
         bitmap.convertTo(bitmap, CvType.CV_8UC1);
 
-        // 可选膨胀操作, 用于连接相邻的文本区域
+        // 3.可选膨胀操作, 用于连接相邻的文本区域
         if (ocrConfig.isDilation()) {
             int kernelSize = modelConfig.getDilateKernelSize();
             Mat kernel = Imgproc.getStructuringElement(
@@ -218,7 +196,7 @@ public class DetProcessor {
             log.debug("膨胀操作完成, 核大小: {}", kernelSize);
         }
 
-        // 查找轮廓
+        // 4.查找轮廓
         List<MatOfPoint> contours = new ArrayList<>();
         Mat hierarchy = new Mat();
         Imgproc.findContours(bitmap, contours, hierarchy,
@@ -239,236 +217,115 @@ public class DetProcessor {
         log.debug("开始轮廓解析过滤");
         List<ContourBox> contourBoxes = new ArrayList<>();
         for (int i = 0; i < contours.size(); i++) {
+            log.trace("当前处理第 {} 个轮廓框: ", i);
             MatOfPoint contour = contours.get(i);
             ContourBox contourBox = new ContourBox();
-            log.info("当前处理第 {} 个轮廓框, 当前轮廓框顶点数量: {}", i, contour.toArray().length);
-            // 计算面积
+            contourBoxes.add(contourBox);
+            // 初始顶点坐标
+            Point[] points = contour.toArray();
+            contourBox.setPoints(points);
+            // 1.噪声过滤
+            // 顶点数量过滤
+            log.trace("当前轮廓框顶点数量: {}", points.length);
+            if (points.length < 4) {
+                log.trace("顶点数量不足, 已过滤");
+                contourBox.setNoiseFilter(true);
+                continue;
+            }
             double area = Imgproc.contourArea(contour);
             contourBox.setArea(area);
-            log.info("当前轮廓框面积: {}", area);
+            log.trace("当前轮廓框面积: {}, 最小面积阈值: {}", area, ocrConfig.getBoxMinArea());
             // 面积过滤
-            if (area <= ocrConfig.getDetMinArea()) {
-                log.info("最小面积阈值: {}, 当前轮廓框面积不足, 已过滤", ocrConfig.getDetMinArea());
-                contourBox.setAreaFilter(true);
-                OpenCVUtil.releaseMat(contour);
-                contourBoxes.add(contourBox);
+            if (area <= ocrConfig.getBoxMinArea()) {
+                log.trace("面积不足, 已过滤");
+                contourBox.setNoiseFilter(true);
                 continue;
             }
-            // 计算平均置信度
-            double score = OpenCVUtil.getScore(contour, probMat);
-            contourBox.setScore(score);
-            log.info("当前轮廓框平均置信度: {}", score);
-            // 平均置信度过滤
-            if (score < ocrConfig.getDetBoxThresh()) {
-                log.info("最小平均置信度阈值: {}, 当前轮廓框平均置信度不足, 已过滤", ocrConfig.getDetBoxThresh());
-                contourBox.setScoreFilter(true);
-                OpenCVUtil.releaseMat(contour);
-                contourBoxes.add(contourBox);
+            // 边界框尺寸过滤
+            Rect rect = Imgproc.boundingRect(contour);
+            double maxSize = Math.max(rect.width, rect.height);
+            contourBox.setBoundingRect(rect);
+            log.trace("当前轮廓框外接矩形: H:{} x W:{}, 长边尺寸: {}, 最小尺寸阈值: {}",
+                    rect.height, rect.width, maxSize, ocrConfig.getBoxMinSize());
+            // 长边尺寸判断过滤
+            if (maxSize < ocrConfig.getBoxMinSize()) {
+                log.trace("长边尺寸不足, 已过滤");
+                contourBox.setNoiseFilter(true);
                 continue;
             }
-            // 多边形近似（平滑轮廓）
-            Point[] approx = OpenCVUtil.approxPolyDP(contour, modelConfig.getEpsilon(), true);
+
+            // 2.多边形近似
+            Point[] approx = OpenCVUtil.approxPolyDP(contour, ocrConfig.getEpsilon(), true);
             contourBox.setApproxPoints(approx);
-            // 最终过滤后返回的四边形顶点
-            Point[] quadPoints = new Point[4];
-            log.info("当前轮廓框多边近似完成, 腐蚀度: {}, 顶点数量: {}", modelConfig.getEpsilon(), approx.length);
+            log.trace("当前轮廓框多边近似完成, 腐蚀度: {}, 顶点数量: {} -> {}",
+                    ocrConfig.getEpsilon(), contour.toArray().length, approx.length);
+            // 多边近似失败过滤
             if (approx.length < 4) {
-                log.info("当前轮廓框多边近似完成后顶点数量不足, 已过滤");
-                contourBox.setApproxFail(true);
-                OpenCVUtil.releaseMat(contour);
-                contourBoxes.add(contourBox);
+                log.trace("多边近似后顶点数量不足, 已过滤");
+                contourBox.setApproxFilter(true);
                 continue;
             }
-            // 使用四边形拟合返回最小外接矩形顶点
+
+            // 3.四边拟合
+            Point[] quadPoints;
             if (approx.length > 4) {
                 // 获取最小外接矩形顶点
-                MatOfPoint2f approx2f = new MatOfPoint2f(approx);
-                RotatedRect rr = Imgproc.minAreaRect(approx2f);
-                OpenCVUtil.releaseMat(approx2f);
-                // 设置排序顶点
-                rr.points(quadPoints);
-                log.info("已使用四边形拟合, 返回当前轮廓框最小外接矩阵顶点");
-            }
-            // 顶点数量为4时将四边形框转换为矩形框
-            if (approx.length == 4) {
-                // 设置顶点排序
+                quadPoints = OpenCVUtil.minAreaRect(approx);
+            } else {
                 quadPoints = approx;
             }
-            // 获取过滤后的四边形最大尺寸
-            Size rectSize = OpenCVUtil.getRectSize(quadPoints);
-            // 计算宽高比
-            double aspectRatio = rectSize.width / Math.max(1, rectSize.height);
-            contourBox.setAspectRatio(aspectRatio);
-            log.info("当前四边形轮廓框宽高比: {}", aspectRatio);
-            // 最大宽高比过滤
-            if (aspectRatio > ocrConfig.getDetMaxAspectRatio()) {
-                log.info("最大宽高比阈值: {}, 当前四边形轮廓框宽高比过高, 已过滤", ocrConfig.getDetMinSize());
-                contourBox.setAspectRatioFilter(true);
-                OpenCVUtil.releaseMat(contour);
-                contourBoxes.add(contourBox);
+            contourBox.setQuadPoints(quadPoints);
+            log.trace("当前轮廓框四边拟合完成, 顶点坐标: {}", Arrays.asList(quadPoints));
+
+            // 4.顶点排序
+            quadPoints = OpenCVUtil.orderPoints(quadPoints);
+            contourBox.setOrderPoints(quadPoints);
+            log.trace("当前轮廓框顶点排序完成, 顶点坐标: {}", Arrays.asList(quadPoints));
+
+            // 5.计算置信度
+            double score = OpenCVUtil.getScore(contour, probMat);
+            contourBox.setScore(score);
+            log.trace("当前轮廓框平均置信度: {}, 最小置信度阈值: {}", score, ocrConfig.getBoxThresh());
+            // 置信度过滤
+            if (score < ocrConfig.getBoxThresh()) {
+                log.trace("平均置信度不足, 已过滤");
+                contourBox.setScoreFilter(true);
                 continue;
             }
-            // 计算最小尺寸
-            double minSize = Math.min(rectSize.width, rectSize.height);
-            contourBox.setMinSize(minSize);
-            log.info("当前四边形轮廓框最小边尺寸: {}", minSize);
-            // 最小尺寸过滤
-            if (minSize < ocrConfig.getDetMinSize()) {
-                log.info("最小尺寸阈值: {}, 当前四边形轮廓框最小边尺寸不足, 已过滤", ocrConfig.getDetMinSize());
-                contourBox.setMinSizeFilter(true);
-                OpenCVUtil.releaseMat(contour);
-                contourBoxes.add(contourBox);
-                continue;
-            }
-            // 轮廓框扩张
-            // 扩张后的顶点
-            Point[] unclipPoints = OpenCVUtil.unclipPolygon(quadPoints, ocrConfig.getDetUnclipRatio());
-            Size rectSize1 = OpenCVUtil.getRectSize(unclipPoints);
+
+            // 6.扩张
+            Point[] unclipPoints = OpenCVUtil.unclip(quadPoints, ocrConfig.getUnclipRatio());
             contourBox.setUnclipPoints(unclipPoints);
-            log.info("当前轮廓框多边扩张完成, 扩张比率: {}, 扩张后顶点数量: {}",
-                    ocrConfig.getDetUnclipRatio(), unclipPoints.length);
-            if (unclipPoints.length < 4) {
-                log.info("当前轮廓框扩张后顶点数量不足, 已过滤");
-                contourBox.setUnclipFail(true);
-                OpenCVUtil.releaseMat(contour);
-                contourBoxes.add(contourBox);
-                continue;
-            }
-            // 坐标还原
+            log.trace("当前轮廓框扩张完成, 扩张比率: {}", ocrConfig.getUnclipRatio());
+            log.trace("扩张前顶点: {}", Arrays.asList(quadPoints));
+            log.trace("扩张后顶点: {}", Arrays.asList(unclipPoints));
+
+            // 7.坐标还原
             Point[] restorePoints = OpenCVUtil.restorePoints(
                     unclipPoints, detState.getResizeMatSize(), detState.getRawMatSize());
-            log.trace("轮廓框坐标已还原到原图");
+            log.trace("当前轮廓框坐标已还原到原图, 缩放图: H:{} x W:{}, 原图: H:{} x W:{}",
+                    detState.getResizeMatSize().height, detState.getResizeMatSize().width,
+                    detState.getRawMatSize().height, detState.getRawMatSize().width);
             log.trace("还原前顶点: {}", Arrays.asList(unclipPoints));
             log.trace("还原后顶点: {}", Arrays.asList(restorePoints));
+
+            // 8.纵形轮廓框顶点重新排序
+            Size rectSize = OpenCVUtil.getRectSize(restorePoints);
+            double aspectRatio = rectSize.width / Math.max(1, rectSize.height);
+            contourBox.setAspectRatio(aspectRatio);
+            log.trace("当前四边形轮廓框宽高比: {}, 最低宽高比阈值: {}", aspectRatio, ocrConfig.getBoxMinAspectRatio());
+            // 最小宽高比顶点重新排序
+            if (aspectRatio < ocrConfig.getBoxMinAspectRatio()) {
+                log.trace("宽高比过低, 纵形轮廓框顶点重新排序");
+                log.trace("重新排序前顶点: {}", Arrays.asList(restorePoints));
+                restorePoints = OpenCVUtil.rotateOrderPoints(restorePoints);
+                log.trace("重新排序后顶点: {}", Arrays.asList(restorePoints));
+                log.trace("重新排序后宽高比: {}", rectSize.height / Math.max(1, rectSize.width));
+            }
             contourBox.setRestorePoints(restorePoints);
-            // 资源释放
-            OpenCVUtil.releaseMat(contour);
-            contourBoxes.add(contourBox);
         }
+        // 资源释放
+        contours.forEach(OpenCVUtil::releaseMat);
         detState.setContourBoxes(contourBoxes);
     }
-
-//    /**
-//     * 轮廓解析
-//     */
-//    private void parseContours1(List<MatOfPoint> contours, Mat probMat, DetState detState){
-//        log.debug("开始轮廓解析过滤");
-//        List<ContourBox> contourBoxes = new ArrayList<>();
-//        for (int i = 0; i < contours.size(); i++) {
-//            MatOfPoint contour = contours.get(i);
-//            ContourBox contourBox = new ContourBox();
-//            log.trace("当前处理第 {} 个轮廓框, 当前轮廓框顶点数量: {}", i, contour.toArray().length);
-//            // 1.多边形近似
-//            Point[] approx = OpenCVUtil.approxPolyDP(contour, modelConfig.getEpsilon(), true);
-//            contourBox.setApproxPoints(approx);
-//            // 最终过滤后返回的四边形顶点
-//            Point[] quadPoints;
-//            log.trace("当前轮廓框多边近似完成, 腐蚀度: {}, 顶点数量: {} -> {}",
-//                    modelConfig.getEpsilon(), contour.toArray().length, approx.length);
-//            // 顶点数量不足过滤
-//            if (approx.length < 4) {
-//                log.trace("当前轮廓框多边近似完成后顶点数量不足, 已过滤");
-//                contourBox.setApproxFail(true);
-//                OpenCVUtil.releaseMat(contour);
-//                contourBoxes.add(contourBox);
-//                continue;
-//            }
-//            // 2.四边拟合
-//            else if (approx.length > 4) {
-//                // 获取最小外接矩形顶点
-//                quadPoints = OpenCVUtil.minAreaRect(approx);
-//                log.trace("已使用四边形拟合, 返回当前轮廓框最小外接矩阵顶点");
-//            } else {
-//                quadPoints = approx;
-//            }
-//            // 3.顶点排序
-//            quadPoints = OpenCVUtil.orderPoints(quadPoints);
-//            // 扩张前
-//            Size rectSize1 = OpenCVUtil.getRectSize(quadPoints);
-//
-//            // 4.计算置信度
-//            double score = OpenCVUtil.getScore(contour, probMat);
-//            contourBox.setScore(score);
-//            log.trace("当前轮廓框平均置信度: {}", score);
-//            // 置信度过滤
-//            if (score < ocrConfig.getDetBoxThresh()) {
-//                log.trace("最小平均置信度阈值: {}, 当前轮廓框平均置信度不足, 已过滤", ocrConfig.getDetBoxThresh());
-//                contourBox.setScoreFilter(true);
-//                OpenCVUtil.releaseMat(contour);
-//                contourBoxes.add(contourBox);
-//                continue;
-//            }
-//            // 5.扩张
-//            Point[] unclipPoints = OpenCVUtil.unclipByDistance(quadPoints, ocrConfig.getDetUnclipRatio());
-//            // 扩张后
-//            Size rectSize2 = OpenCVUtil.getRectSize(unclipPoints);
-//
-//            log.trace("当前轮廓框扩张完成, 扩张比率: {}, 扩张后顶点数量: {}",
-//                    ocrConfig.getDetUnclipRatio(), unclipPoints.length);
-//            if (unclipPoints.length < 4) {
-//                log.trace("当前轮廓框扩张后顶点数量不足, 已过滤");
-//                contourBox.setUnclipFail(true);
-//                OpenCVUtil.releaseMat(contour);
-//                contourBoxes.add(contourBox);
-//                continue;
-//            }
-//            // 6.坐标还原
-//            Point[] restorePoints = OpenCVUtil.restorePoints(
-//                    unclipPoints, detState.getResizeMatSize(), detState.getRawMatSize());
-//            log.trace("轮廓框坐标已还原到原图");
-//            log.trace("还原前顶点: {}", Arrays.asList(unclipPoints));
-//            log.trace("还原后顶点: {}", Arrays.asList(restorePoints));
-//
-//            // 7.计算面积
-//            double area = OpenCVUtil.getArea(restorePoints);
-//            contourBox.setArea(area);
-//            log.trace("当前轮廓框面积: {}", area);
-//            // 面积过滤
-//            if (area <= ocrConfig.getDetMinArea()) {
-//                log.trace("最小面积阈值: {}, 当前轮廓框面积不足, 已过滤", ocrConfig.getDetMinArea());
-//                contourBox.setAreaFilter(true);
-//                OpenCVUtil.releaseMat(contour);
-//                contourBoxes.add(contourBox);
-//                continue;
-//            }
-//            // 获取过滤后的四边形最大尺寸
-//            Size rectSize = OpenCVUtil.getRectSize(restorePoints);
-//            // 8.计算宽高比
-//            double aspectRatio = rectSize.width / Math.max(1, rectSize.height);
-//            contourBox.setAspectRatio(aspectRatio);
-//            log.trace("当前四边形轮廓框宽高比: {}", aspectRatio);
-//            // 最大宽高比过滤
-//            if (aspectRatio > ocrConfig.getDetMaxAspectRatio()) {
-//                log.trace("最大宽高比阈值: {}, 当前四边形轮廓框宽高比过高, 已过滤", ocrConfig.getDetMinSize());
-//                contourBox.setAspectRatioFilter(true);
-//                OpenCVUtil.releaseMat(contour);
-//                contourBoxes.add(contourBox);
-//                continue;
-//            }
-//            // 最小宽高比顶点重新排序
-//            if (aspectRatio < ocrConfig.getDetMinAspectRatio()) {
-//                restorePoints = OpenCVUtil.rotateOrderPoints(restorePoints);
-//                log.trace("当前四边形轮廓框宽高比过低, 已进行顶点重新排序交换宽高");
-//            }
-//            // 9.计算最小尺寸
-//            double minSize = Math.min(rectSize.width, rectSize.height);
-//            contourBox.setMinSize(minSize);
-//            log.trace("当前四边形轮廓框最小边尺寸: {}", minSize);
-//            // 最小尺寸过滤
-//            if (minSize < ocrConfig.getDetMinSize()) {
-//                log.trace("最小尺寸阈值: {}, 当前四边形轮廓框最小边尺寸不足, 已过滤", ocrConfig.getDetMinSize());
-//                contourBox.setMinSizeFilter(true);
-//                OpenCVUtil.releaseMat(contour);
-//                contourBoxes.add(contourBox);
-//                continue;
-//            }
-//            // 设值和资源释放
-//            contourBox.setRestorePoints(restorePoints);
-//            OpenCVUtil.releaseMat(contour);
-//            contourBoxes.add(contourBox);
-//        }
-//        detState.setContourBoxes(contourBoxes);
-//    }
-
-
 }

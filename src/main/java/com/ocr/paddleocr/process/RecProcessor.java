@@ -60,9 +60,13 @@ public class RecProcessor {
         log.debug("模型输入图像尺寸: H:{} x W:{} ", modelInputShape[2], modelInputShape[3]);
         // 透视变换裁剪 + 图像旋转纠正 + 缩放
         Map<TextBox,Mat> originalOrderMap = new HashMap<>();
+        // 裁剪图
+        Mat rawCropMat = context.getRawMat().clone();
         boxes.forEach(textBox -> {
             // 裁剪
-            Mat cropMat = OpenCVUtil.perspectiveTransformCrop(context.getRawMat(), textBox.getPoints());
+            Mat cropMat = OpenCVUtil.perspectiveTransformCrop(rawCropMat, textBox.getPoints());
+            // 将已裁剪区域置空
+            OpenCVUtil.fillPolyWhite(rawCropMat, textBox.getPoints());
             log.trace("图像裁剪完成, 裁剪图尺寸: H:{} x W:{} ", cropMat.height(), cropMat.width());
             // 旋转纠正
             Mat rotateMat;
@@ -81,6 +85,7 @@ public class RecProcessor {
             OpenCVUtil.releaseMat(cropMat);
             OpenCVUtil.releaseMat(rotateMat);
         });
+        OpenCVUtil.releaseMat(rawCropMat);
         // 分组并对齐步长倍数 + padding
         int batchSize = ocrConfig.getBatchSize();
         // 转换为List并按宽度排序
@@ -210,26 +215,21 @@ public class RecProcessor {
                         ctcResult.stream().map(arr -> Float.intBitsToFloat(arr[1])).collect(Collectors.toList()));
 
                 // 去除背景和重复时间步
-                List<int[]> filteredResult = ctcResult.stream()
-                        // 1. 过滤掉 blank token（索引0）
-                        .filter(arr -> {
-                            int maxIdx = arr[0];
-                            return maxIdx != 0;
-                        })
-                        // 2. 去重: 跳过连续相同的索引
-                        .collect(ArrayList::new, (list, item) -> {
-                            if (list.isEmpty()) {
-                                list.add(item);
-                            } else {
-                                int[] last = list.get(list.size() - 1);
-                                int lastIdx = last[0];
-                                int currentIdx = item[0];
-                                // 只添加与上一个不同的索引
-                                if (currentIdx != lastIdx) {
-                                    list.add(item);
-                                }
-                            }
-                        }, ArrayList::addAll);
+                List<int[]> filteredResult = new ArrayList<>();
+                int prevIdx = -1;
+                for (int[] arr : ctcResult) {
+                    int currentIdx = arr[0];
+                    // 遇到background token，重置prev
+                    if (currentIdx == 0) {
+                        prevIdx = -1;
+                        continue;
+                    }
+                    // 只添加与上一个不同的索引
+                    if (currentIdx != prevIdx) {
+                        filteredResult.add(arr);
+                        prevIdx = currentIdx;
+                    }
+                }
 
                 log.trace("当前检测框时间步过滤后索引: {}",
                         filteredResult.stream().map(arr -> arr[0]).collect(Collectors.toList()));

@@ -71,9 +71,13 @@ public class ClsProcessor {
             List<TextBox> batchBoxes = boxes.subList(batchBegin, batchEnd);
             // 当前批次检测框直接缩放归一到模型输入尺寸
             List<float[]> chwList = new ArrayList<>();
+            // 裁剪图
+            Mat rawCropMat = context.getRawMat().clone();
             for (TextBox textBox : batchBoxes) {
                 // 透视变换裁剪
-                Mat cropMat = OpenCVUtil.perspectiveTransformCrop(context.getRawMat(), textBox.getPoints());
+                Mat cropMat = OpenCVUtil.perspectiveTransformCrop(rawCropMat, textBox.getPoints());
+                // 将已裁剪区域置空
+                OpenCVUtil.fillPolyWhite(rawCropMat, textBox.getPoints());
                 log.trace("图像裁剪完成, 裁剪图尺寸: H:{} x W:{} ", cropMat.height(), cropMat.width());
                 // 缩放和转换转换RGB通道
                 Mat rgbMat = OpenCVUtil.resizeToRGB(cropMat,new Size(modelInputW, modelInputH));
@@ -89,6 +93,7 @@ public class ClsProcessor {
                 OpenCVUtil.releaseMat(cropMat);
                 OpenCVUtil.releaseMat(rgbMat);
             }
+            OpenCVUtil.releaseMat(rawCropMat);
             log.debug("分组预处理第 {} 批完成, 本批检测框数量: {}, 统一尺寸: H:{} x W:{}",
                     batchCount, batchBoxes.size(), modelInputH, modelInputW);
             clsBatches.add(ClsBatch.builder()
@@ -175,19 +180,12 @@ public class ClsProcessor {
         context.setClsResultBoxes(clsResultBoxes);
 
         // 统计按角度分组的旋转数量
-        long rotate180Count = clsResultBoxes.stream()
-                .filter(box -> box.isRotate() && box.getAngle() == 180)
-                .count();
-        long rotate90Count = clsResultBoxes.stream()
-                .filter(box -> box.isRotate() && box.getAngle() == 90)
-                .count();
-        long rotate270Count = clsResultBoxes.stream()
-                .filter(box -> box.isRotate() && box.getAngle() == 270)
-                .count();
-        long rotatedCount = rotate180Count + rotate90Count + rotate270Count;
-
-        log.debug("检测框旋转纠正统计: 总检测框数量: {}, 触发旋转纠正检测框数量: {} , 角度统计: 180°: {}, 90°: {}, 270°: {}",
-                clsResultBoxes.size(), rotatedCount, rotate180Count, rotate90Count, rotate270Count);
+        log.debug("检测框角度分类统计: 总检测框数量: {}, 非正向检测框数量: {}, 角度统计: 90°: {}, 180°: {}, 270°: {}",
+                clsResultBoxes.size(),
+                clsResultBoxes.stream().filter(TextBox::isRotate).count(),
+                clsResultBoxes.stream().filter(box -> box.isRotate() && box.getAngle() == 90).count(),
+                clsResultBoxes.stream().filter(box -> box.isRotate() && box.getAngle() == 180).count(),
+                clsResultBoxes.stream().filter(box -> box.isRotate() && box.getAngle() == 270).count());
         log.info("后处理检测框旋转纠正阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
     }
 }

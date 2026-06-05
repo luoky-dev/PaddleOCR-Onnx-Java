@@ -2,16 +2,9 @@ package com.ocr.paddleocr.process;
 
 import com.ocr.paddleocr.config.OCRConfig;
 import com.ocr.paddleocr.domain.OCRContext;
-import com.ocr.paddleocr.domain.TextBox;
 import com.ocr.paddleocr.utils.OpenCVUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.opencv.core.Mat;
-import org.opencv.core.Point;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Locale;
-import java.util.Objects;
 
 @Slf4j
 public class DebugProcessor {
@@ -68,7 +61,7 @@ public class DebugProcessor {
      */
     public static void printDetBinaryMapImage(OCRContext context, OCRConfig config, String debugPath) {
         // 获取阈值（默认0.3）
-        float threshold = config == null ? 0.3f : config.getDetThresh();
+        float threshold = config == null ? 0.3f : config.getBitThresh();
         // 创建二值图（大于阈值=255，否则=0）
         Mat binary = OpenCVUtil.createBinaryMap(context.getDetState().getProb(), threshold);
         OpenCVUtil.saveImageAndRelease(binary, debugPath + "/det_binary_map.jpg");

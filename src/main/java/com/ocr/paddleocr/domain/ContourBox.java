@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.opencv.core.Point;
+import org.opencv.core.Rect;
 
 @Data
 @Builder
@@ -13,9 +14,9 @@ import org.opencv.core.Point;
 public class ContourBox {
 
     /**
-     * 轮廓框顺序
+     * 轮廓框原始顶点
      */
-    private int index;
+    private Point[] points;
 
     /**
      * 轮廓框面积
@@ -23,9 +24,34 @@ public class ContourBox {
     private double area;
 
     /**
-     * 面积过滤标志(true: 小于最低阈值触发过滤)
+     * 边界框尺寸
      */
-    private boolean areaFilter;
+    private Rect boundingRect;
+
+    /**
+     * 噪声框过滤标志
+     */
+    private boolean noiseFilter;
+
+    /**
+     * 多边近似后的顶点
+     */
+    private Point[] approxPoints;
+
+    /**
+     * 多边近似失败标志(true: 多边近似后顶点数量异常)
+     */
+    private boolean approxFilter;
+
+    /**
+     * 四边拟合后的顶点
+     */
+    private Point[] quadPoints;
+
+    /**
+     * 排序后的顶点
+     */
+    private Point[] orderPoints;
 
     /**
      * 平均置信度
@@ -33,7 +59,7 @@ public class ContourBox {
     private double score;
 
     /**
-     * 平均置信度过滤标志(true: 小于最低阈值触发过滤)
+     * 置信度过低过滤标志(true: 小于最低阈值触发过滤)
      */
     private boolean scoreFilter;
 
@@ -43,39 +69,9 @@ public class ContourBox {
     private Point[] unclipPoints;
 
     /**
-     * 扩张失败标志(true: 扩张后顶点数量异常, 扩张失败)
-     */
-    private boolean unclipFail;
-
-    /**
-     * 多边近似后的顶点
-     */
-    private Point[] approxPoints;
-
-    /**
-     * 多边近似失败标志(true: 多边近似后顶点数量异常, 启用算法失败)
-     */
-    private boolean approxFail;
-
-    /**
-     * 最小尺寸
-     */
-    private double minSize;
-
-    /**
-     * 最小尺寸过滤(true: 小于最低阈值触发过滤)
-     */
-    private boolean minSizeFilter;
-
-    /**
      * 宽高比
      */
     private double aspectRatio;
-
-    /**
-     * 宽高比过滤(true: 大于最大阈值触发过滤)
-     */
-    private boolean aspectRatioFilter;
 
     /**
      * 还原后在原图的坐标
