@@ -9,15 +9,13 @@ import org.opencv.core.Mat;
 @Slf4j
 public class DebugProcessor {
 
-    public static void printDebugImages(OCRContext context, OCRConfig config, String debugPath) {
-        if (context == null || debugPath == null || debugPath.trim().isEmpty()) {
-            return;
-        }
+    public static void printDebugImages(OCRContext context, OCRConfig config) {
+        String debugPath = config.getDebugPath() + "/" + context.getImageName() + "_Debug";
         OpenCVUtil.ensureDir(debugPath);
 
 //        safeRun("det_boxes", () -> printDetBoxesImage(context, debugPath));
-        safeRun("det_prob_heatmap", () -> printDetProbHeatmapImage(context, debugPath));
-        safeRun("det_binary_map", () -> printDetBinaryMapImage(context, config, debugPath));
+        safeRun("heatmap", () -> printHeatMapImage(context, config.getDebugPath()));
+        safeRun("bitmap", () -> printBitMapImage(context, config, config.getDebugPath()));
 //        safeRun("det_contours", () -> printContourImages(context, debugPath));
 //        safeRun("det_crops", () -> printDetCropImages(context, debugPath));
 //        safeRun("cls_compare", () -> printClsCompareImages(context, debugPath));
@@ -46,7 +44,7 @@ public class DebugProcessor {
      * - 红色/黄色：高概率（文本区域）
      * - 蓝色/黑色：低概率（背景）
      */
-    public static void printDetProbHeatmapImage(OCRContext context, String debugPath) {
+    public static void printHeatMapImage(OCRContext context, String debugPath) {
         // 将概率图转换为伪彩色热力图
         Mat heatmap = OpenCVUtil.createProbHeatmap(context.getDetState().getProb());
         OpenCVUtil.saveImageAndRelease(heatmap, debugPath + "/det_prob_heatmap.jpg");
@@ -59,7 +57,7 @@ public class DebugProcessor {
      * - 白色：超过阈值的区域（可能是文本）
      * - 黑色：低于阈值的区域（背景）
      */
-    public static void printDetBinaryMapImage(OCRContext context, OCRConfig config, String debugPath) {
+    public static void printBitMapImage(OCRContext context, OCRConfig config, String debugPath) {
         // 获取阈值（默认0.3）
         float threshold = config == null ? 0.3f : config.getBitThresh();
         // 创建二值图（大于阈值=255，否则=0）

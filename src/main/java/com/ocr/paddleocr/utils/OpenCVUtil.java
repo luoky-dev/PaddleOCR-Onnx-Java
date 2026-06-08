@@ -193,7 +193,7 @@ public class OpenCVUtil {
     }
 
     /**
-     * 保存绘制结果到文件
+     * 保存图像
      */
     public static void saveImage(Mat image, String outputPath) {
         if (image == null || image.empty()) {
@@ -209,6 +209,9 @@ public class OpenCVUtil {
         Imgcodecs.imwrite(outputPath, image);
     }
 
+    /**
+     * 读取图像
+     */
     public static Mat getImage(String inputPath){
         if (inputPath == null || inputPath.trim().isEmpty()) {
             throw new IllegalArgumentException("Path cannot be empty");
@@ -220,6 +223,23 @@ public class OpenCVUtil {
         return image;
     }
 
+    /**
+     * 获取图像名
+     */
+    public static String getImageName(String inputPath){
+        if (inputPath == null || inputPath.trim().isEmpty()) {
+            throw new IllegalArgumentException("Path cannot be empty");
+        }
+        File file = new File(inputPath);
+        if (!file.exists()) {
+            throw new IllegalArgumentException("Unable to read image");
+        }
+        return file.getName();
+    }
+
+    /**
+     * 读取字典
+     */
     public static String[] readDictionary(String dictPath) throws IOException {
         List<String> dictList = new ArrayList<>();
         BufferedReader br = new BufferedReader(
@@ -241,7 +261,7 @@ public class OpenCVUtil {
      *
      * @param image 原始图像
      * @param points 文本框四点坐标
-     * @return 校正后的矩形图像
+     * @return 裁剪的矩形图像
      */
     public static Mat perspectiveTransformCrop(Mat image, Point[] points) {
 
@@ -952,7 +972,7 @@ public class OpenCVUtil {
     public static void ensureDir(String dir) {
         File file = new File(dir);
         if (!file.exists() && !file.mkdirs()) {
-            throw new IllegalStateException("failed to create debug directory: " + dir);
+            throw new IllegalStateException("failed to create directory: " + dir);
         }
     }
 

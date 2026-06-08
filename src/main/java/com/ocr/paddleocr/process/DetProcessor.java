@@ -31,8 +31,11 @@ public class DetProcessor {
         this.modelConfig = modelManager.getModelConfig();
     }
 
+    /**
+     * 图像检测 - 主流程
+     */
     public void detect(OCRContext context) throws OrtException {
-        log.info("开始图像检测");
+        log.debug("开始图像检测");
         long startTime = System.currentTimeMillis();
         // 预处理
         preprocess(context);
@@ -40,11 +43,15 @@ public class DetProcessor {
         parse(context);
         // 后处理
         postprocess(context);
-        log.info("图像检测完成, 检测成功检测框数量: {}, 耗时: {} ms", context.getDetResultBoxes().size(), System.currentTimeMillis() - startTime);
+        log.debug("图像检测完成, 检测成功检测框数量: {}, 耗时: {} ms", context.getDetResultBoxes().size(), System.currentTimeMillis() - startTime);
     }
 
+    /**
+     * 图像检测 - 预处理
+     * 将原图像转换为模型输入格式
+     */
     private void preprocess(OCRContext context) throws OrtException {
-        log.info("图像检测 - 预处理阶段");
+        log.debug("图像检测 - 预处理阶段");
         long startTime = System.currentTimeMillis();
         // det模型输入形状和原图
         Mat rawMat = context.getRawMat();
@@ -89,7 +96,7 @@ public class DetProcessor {
         OpenCVUtil.releaseMat(paddedMat);
         // 返回结果
         long elapsed = System.currentTimeMillis() - startTime;
-        log.info("预处理阶段完成, 耗时: {} ms", elapsed);
+        log.debug("预处理阶段完成, 耗时: {} ms", elapsed);
         context.setDetState(
                 DetState.builder()
                         .chwData(chwData)
@@ -100,10 +107,11 @@ public class DetProcessor {
     }
 
     /**
-     * 模型推理
+     * 图像检测 - 模型推理
+     * 进行模型推理
      */
     private void parse(OCRContext context) throws OrtException {
-        log.info("图像检测 - 模型推理阶段");
+        log.debug("图像检测 - 模型推理阶段");
         long startTime = System.currentTimeMillis();
         DetState detState = context.getDetState();
         // 模型解析输入
@@ -112,21 +120,22 @@ public class DetProcessor {
         try (OnnxTensor input = OnnxUtil.createBatchInputTensor(chwList, modelManager.getEnv(), detState.getModelInputSize());
              Result output = modelManager.getDetSession().run(Collections.singletonMap("x", input))) {
             // 模型输出
-            float[][] prob = OnnxUtil.parseDetOutput(output);
+            float[][] prob = OnnxUtil.parseOnnxValue2D(output);
             detState.setProb(prob);
             log.debug("模型推理完成, 特征图尺寸: Height:{} x Width:{}", prob.length, prob[0].length);
         } catch (OrtException e) {
             log.error("检测模型推理失败", e);
             throw e;
         }
-        log.info("模型推理阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
+        log.debug("模型推理阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
     }
-
+    
     /**
-     * 后处理: 二值化、轮廓查找过滤、检测框提取
+     * 图像检测 - 后处理
+     * 解码输出并进行检测框过滤和提取
      */
     private void postprocess(OCRContext context) {
-        log.info("图像检测 - 后处理检测框提取阶段");
+        log.debug("图像检测 - 后处理检测框提取阶段");
         long startTime = System.currentTimeMillis();
         DetState detState = context.getDetState();
         // 概率图转 Mat
@@ -164,16 +173,16 @@ public class DetProcessor {
         // 资源释放
         OpenCVUtil.releaseMat(probMat);
         // 输出统计信息
-        log.info("结果统计 - 总轮廓框: {}, 有效检测框: {}", contours.size(), orderMap.size());
-        log.info("过滤统计 - 噪声框过滤: {}, 置信度不足过滤: {}, 多边近似失败过滤: {}",
+        log.debug("结果统计 - 总轮廓框: {}, 有效检测框: {}", contours.size(), orderMap.size());
+        log.debug("过滤统计 - 噪声框过滤: {}, 置信度不足过滤: {}, 多边近似失败过滤: {}",
                 boxes.stream().filter(ContourBox::isNoiseFilter).count(),
                 boxes.stream().filter(ContourBox::isScoreFilter).count(),
                 boxes.stream().filter(ContourBox::isApproxFilter).count());
-        log.info("后处理检测框提取阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
+        log.debug("后处理检测框提取阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
     }
 
     /**
-     * 轮廓检测
+     * 轮廓框检测
      */
     private List<MatOfPoint> findContours(Mat probMat){
         log.debug("开始轮廓检测");
@@ -211,7 +220,7 @@ public class DetProcessor {
     }
 
     /**
-     * 轮廓解析
+     * 轮廓框过滤解析
      */
     private void parseContours(List<MatOfPoint> contours, Mat probMat, DetState detState){
         log.debug("开始轮廓解析过滤");

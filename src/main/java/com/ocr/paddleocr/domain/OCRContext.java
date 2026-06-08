@@ -20,6 +20,16 @@ public class OCRContext {
     private Mat rawMat;
 
     /**
+     * 原图像路径
+     */
+    private String imagePath;
+
+    /**
+     * 原图像名
+     */
+    private String imageName;
+
+    /**
      * 图像检测运行状态
      */
     private DetState detState;

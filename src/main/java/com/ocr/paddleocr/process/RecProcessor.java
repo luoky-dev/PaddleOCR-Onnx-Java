@@ -31,8 +31,11 @@ public class RecProcessor {
         this.modelConfig = modelManager.getModelConfig();
     }
 
+    /**
+     * 图像识别 - 主流程
+     */
     public void recognize(OCRContext context) throws OrtException {
-        log.info("开始图像识别");
+        log.debug("开始图像识别");
         long startTime = System.currentTimeMillis();
         // 预处理
         preprocess(context);
@@ -40,11 +43,15 @@ public class RecProcessor {
         parse(context);
         // 后处理
         postprocess(context);
-        log.info("图像识别完成, 识别成功检测框数量: {}, 耗时: {} ms", context.getRecResultBoxes().size(), System.currentTimeMillis() - startTime);
+        log.debug("图像识别完成, 识别成功检测框数量: {}, 耗时: {} ms", context.getRecResultBoxes().size(), System.currentTimeMillis() - startTime);
     }
 
+    /**
+     * 图像识别 - 预处理
+     * 将检测框图像分批转换为模型输入格式
+     */
     private void preprocess(OCRContext context) throws OrtException {
-        log.info("图像识别 - 预处理阶段");
+        log.debug("图像识别 - 预处理阶段");
         long startTime = System.currentTimeMillis();
         // rec模型输入形状和检测框
         List<TextBox> boxes = ocrConfig.isUseCls() ? context.getClsResultBoxes() : context.getDetResultBoxes();
@@ -93,11 +100,6 @@ public class RecProcessor {
         orderList.sort(Comparator.comparingInt((Map.Entry<TextBox, Mat> a) -> a.getValue().width()).reversed());
         // 分组
         List<RecBatch> recBatches = new ArrayList<>();
-
-        // 创建子目录
-        String cropDir = ocrConfig.getDebugPath() + "/rec_crops";
-        OpenCVUtil.ensureDir(cropDir);
-
         int batchCount = 0;
         for (int batchBegin = 0; batchBegin < orderList.size(); batchBegin += batchSize) {
             batchCount ++;
@@ -126,10 +128,6 @@ public class RecProcessor {
                 batchBoxes.add(orderList.get(index).getKey());
                 // 资源释放
                 OpenCVUtil.releaseMat(srcMat);
-
-                String file = String.format(Locale.ROOT, "%s/rec_crop_%03d.jpg", cropDir, index);
-                OpenCVUtil.saveImage(paddedMat, file);
-
                 OpenCVUtil.releaseMat(paddedMat);
             }
             log.debug("分组预处理第 {} 批完成, 本批检测框数量: {}, 统一尺寸: H:{} x W:{}",
@@ -141,11 +139,15 @@ public class RecProcessor {
                     .build());
         }
         context.setRecBatches(recBatches);
-        log.info("图像识别预处理完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
+        log.debug("图像识别预处理完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
     }
 
+    /**
+     * 图像识别 - 模型推理
+     * 按批次进行模型推理
+     */
     private void parse(OCRContext context) throws OrtException {
-        log.info("图像识别 - 模型推理阶段");
+        log.debug("图像识别 - 模型推理阶段");
         long startTime = System.currentTimeMillis();
         List<RecBatch> recBatch = context.getRecBatches();
         int batchCount = 0;
@@ -157,7 +159,7 @@ public class RecProcessor {
             try (OnnxTensor input = OnnxUtil.createBatchInputTensor(chwList, modelManager.getEnv(), batch.getModelInputSize());
                  Result output = modelManager.getRecSession().run(Collections.singletonMap("x", input))) {
                 // 模型输出
-                float[][][] prob = OnnxUtil.parseRecOutput(output);
+                float[][][] prob = OnnxUtil.parseOnnxValue3D(output);
                 batch.setProb(prob);
                 log.trace("模型推理第 {}/{} 批完成, 本批检测框数量: {}, 推理字符数: {}, 映射字典数: {}",
                         batchCount, recBatch.size(), prob.length, prob[0].length, prob[0][0].length);
@@ -166,12 +168,16 @@ public class RecProcessor {
                 throw e;
             }
         }
-        log.info("模型推理阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
+        log.debug("模型推理阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
 
     }
 
+    /**
+     * 图像识别 - 后处理
+     * 模型推理结果解码转换为识别文本
+     */
     private void postprocess(OCRContext context) {
-        log.info("图像识别 - 后处理解码阶段");
+        log.debug("图像识别 - 后处理解码阶段");
         long startTime = System.currentTimeMillis();
         List<RecBatch> recBatch = context.getRecBatches();
         List<TextBox> recResultBoxes = new ArrayList<>();
@@ -179,6 +185,7 @@ public class RecProcessor {
         String[] dict;
         try {
             dict = OpenCVUtil.readDictionary(ocrConfig.getDictPath());
+            log.debug("字典读取成功, 字典长度: {}", dict.length);
         } catch (IOException e) {
             log.error("字典读取失败, 图像识别后处理失败");
             throw new RuntimeException("Read dictionary failed, recognition failed",e);
@@ -190,12 +197,15 @@ public class RecProcessor {
         }
         // 按批次解码
         int batchCount = 0;
+        int totalCount = 0;
+        int filterCount = 0;
         for (RecBatch batch : recBatch) {
             batchCount ++;
             log.debug("当前解码处理第 {}/{} 批次, 本批次检测框数量: {}", batchCount, recBatch.size(), batch.getBoxes().size());
             // 当前批次的模型输出
             float[][][] batchProb = batch.getProb();
             for (int i = 0; i < batch.getBoxes().size(); i++) {
+                totalCount ++;
                 log.debug("开始解码第 {} 个检测框", i);
                 // 当前检测框框
                 TextBox box = batch.getBoxes().get(i);
@@ -219,7 +229,7 @@ public class RecProcessor {
                 int prevIdx = -1;
                 for (int[] arr : ctcResult) {
                     int currentIdx = arr[0];
-                    // 遇到background token，重置prev
+                    // 遇到background token重置prev
                     if (currentIdx == 0) {
                         prevIdx = -1;
                         continue;
@@ -253,19 +263,21 @@ public class RecProcessor {
                         .average()
                         .orElse(0.0);
 
-                log.debug("当前检测框最终识别结果: {}, 置信度: {}", recText, confidence);
-                box.setRecText(recText);
-                box.setRecConfidence(confidence > 0 ? (float) confidence : 0.0f);
-                recResultBoxes.add(box);
+                log.debug("当前检测框最终识别结果: {}, 置信度: {}, 最低置信度阈值: {}", recText, confidence, ocrConfig.getRecThresh());
+                if(confidence > ocrConfig.getRecThresh()) {
+                    box.setRecText(recText);
+                    box.setRecConfidence((float) confidence);
+                    recResultBoxes.add(box);
+                } else  {
+                    filterCount ++;
+                    log.debug("当前检测框识别结果置信度过低, 已过滤");
+                }
             }
         }
         // 按index阅读顺序重新排列
         recResultBoxes.sort(Comparator.comparing(TextBox::getIndex));
         context.setRecResultBoxes(recResultBoxes);
-        log.info("后处理解码阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
+        log.debug("总解码检测框数量: {}, 低置信度过滤检测框数量: {}, 最终检测框数量: {}", totalCount, filterCount, totalCount - filterCount);
+        log.debug("后处理解码阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
     }
-
 }
-
-
-

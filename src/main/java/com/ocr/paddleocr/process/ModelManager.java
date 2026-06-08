@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Data
 @NoArgsConstructor
 public class ModelManager implements AutoCloseable {
+
     private static volatile ModelManager instance;
     private OrtEnvironment env;
     private OrtSession detSession;
@@ -25,6 +26,7 @@ public class ModelManager implements AutoCloseable {
     private OrtSession clsSession;
     private OCRConfig ocrConfig;
     private ModelConfig modelConfig;
+
     /**
      * 初始化标志
      */
@@ -58,7 +60,7 @@ public class ModelManager implements AutoCloseable {
         }
 
         long startTime = System.currentTimeMillis();
-        log.info("开始初始化模型管理器");
+        log.debug("开始初始化模型管理器");
 
         this.ocrConfig = ocrConfig;
         this.modelConfig = new ModelConfig();
@@ -72,7 +74,7 @@ public class ModelManager implements AutoCloseable {
         long loadTimeMs = System.currentTimeMillis() - startTime;
         this.initialized = true;
 
-        log.info("模型管理器初始化完成, 耗时: {} ms", loadTimeMs);
+        log.debug("模型管理器初始化完成, 耗时: {} ms", loadTimeMs);
     }
 
     /**
@@ -85,10 +87,10 @@ public class ModelManager implements AutoCloseable {
         try {
             nu.pattern.OpenCV.loadLocally();
             openCVLoaded.set(true);
-            log.info("OpenCV加载成功");
+            log.debug("OpenCV加载成功");
         } catch (Exception e) {
             log.error("OpenCV加载失败", e);
-            throw new RuntimeException("OpenCV加载失败", e);
+            throw new RuntimeException("OpenCV failed to load", e);
         }
     }
 
@@ -96,27 +98,27 @@ public class ModelManager implements AutoCloseable {
      * 加载ONNX模型
      */
     private void loadONNXModels() throws OrtException {
-        log.info("开始加载ONNX模型");
+        log.debug("开始加载ONNX模型");
 
         env = OrtEnvironment.getEnvironment();
         SessionOptions sessionOptions = buildSessionOptions();
         try {
             if (ocrConfig.getDetModelPath() != null) {
-                log.info("加载检测模型: {}", ocrConfig.getDetModelPath());
+                log.debug("加载检测模型: {}", ocrConfig.getDetModelPath());
                 detSession = env.createSession(ocrConfig.getDetModelPath(), sessionOptions);
-                log.info("检测模型加载完成");
+                log.debug("检测模型加载完成");
             }
 
             if (ocrConfig.getRecModelPath() != null) {
-                log.info("加载识别模型: {}", ocrConfig.getRecModelPath());
+                log.debug("加载识别模型: {}", ocrConfig.getRecModelPath());
                 recSession = env.createSession(ocrConfig.getRecModelPath(), sessionOptions);
-                log.info("识别模型加载完成");
+                log.debug("识别模型加载完成");
             }
 
             if (ocrConfig.isUseCls() && ocrConfig.getClsModelPath() != null) {
-                log.info("加载分类模型: {}", ocrConfig.getClsModelPath());
+                log.debug("加载分类模型: {}", ocrConfig.getClsModelPath());
                 clsSession = env.createSession(ocrConfig.getClsModelPath(), sessionOptions);
-                log.info("分类模型加载完成");
+                log.debug("分类模型加载完成");
             }
         } finally {
             closeSessionOptionsQuietly(sessionOptions);
@@ -137,7 +139,7 @@ public class ModelManager implements AutoCloseable {
         if (!ocrConfig.isUseGpu()) {
             SessionOptions cpuOptions = new SessionOptions();
             applyCommonSessionOptions(cpuOptions);
-            log.info("使用 CPU 执行配置, 线程数: {}", ocrConfig.getNumThreads());
+            log.debug("使用 CPU 执行配置, 线程数: {}", ocrConfig.getNumThreads());
             return cpuOptions;
         }
 
@@ -151,7 +153,7 @@ public class ModelManager implements AutoCloseable {
             // 尝试启用CUDA提供程序
             enableCudaProvider(gpuOptions, gpuId);
 
-            log.info("使用 GPU 执行配置(CUDA), gpuId: {}, 线程数: {}",
+            log.debug("使用 GPU 执行配置(CUDA), gpuId: {}, 线程数: {}",
                     gpuId, ocrConfig.getNumThreads());
             return gpuOptions;
 
@@ -163,7 +165,7 @@ public class ModelManager implements AutoCloseable {
             // 创建CPU降级配置
             SessionOptions cpuFallback = new SessionOptions();
             applyCommonSessionOptions(cpuFallback);
-            log.info("回退到 CPU 执行配置, 线程数: {}", ocrConfig.getNumThreads());
+            log.debug("回退到 CPU 执行配置, 线程数: {}", ocrConfig.getNumThreads());
             return cpuFallback;
         }
     }
@@ -178,7 +180,7 @@ public class ModelManager implements AutoCloseable {
     private void applyCommonSessionOptions(SessionOptions sessionOptions)
             throws OrtException {
 
-        // 设置优化级别：全部优化（最高性能）
+        // 设置优化级别: 全部优化 (最高性能) 
         // ALL_OPT 启用量化、算子融合、内存优化等
         sessionOptions.setOptimizationLevel(SessionOptions.OptLevel.ALL_OPT);
 
@@ -187,15 +189,15 @@ public class ModelManager implements AutoCloseable {
         sessionOptions.setInterOpNumThreads(ocrConfig.getNumThreads());
 
         // 设置算子内部并行线程数
-        // 控制单个算子内部的并行执行（如矩阵乘法）
+        // 控制单个算子内部的并行执行 (如矩阵乘法) 
         sessionOptions.setIntraOpNumThreads(ocrConfig.getNumThreads());
     }
 
     /**
-     * 启用CUDA提供程序（GPU加速）
+     * 启用CUDA提供程序 (GPU加速) 
      * 兼容不同版本的ONNX Runtime Java API
-     * - 新版本：addCUDA(int deviceId)
-     * - 旧版本：addCUDA() 无参数，默认设备0
+     * - 新版本: addCUDA(int deviceId)
+     * - 旧版本: addCUDA() 无参数，默认设备0
      *
      * @param sessionOptions 会话选项
      * @param gpuId GPU设备ID
@@ -204,14 +206,14 @@ public class ModelManager implements AutoCloseable {
     private void enableCudaProvider(SessionOptions sessionOptions, int gpuId)
             throws Exception {
 
-        // 尝试调用 addCUDA(int) 方法（新版本API）
-        if (tryInvokeMethod(sessionOptions, "addCUDA",
+        // 尝试调用 addCUDA(int) 方法 (新版本API) 
+        if (tryInvokeMethod(sessionOptions,
                 new Class<?>[]{int.class}, new Object[]{gpuId})) {
             return;  // 成功，直接返回
         }
 
-        // 尝试调用 addCUDA() 无参方法（旧版本API）
-        if (tryInvokeMethod(sessionOptions, "addCUDA",
+        // 尝试调用 addCUDA() 无参方法 (旧版本API) 
+        if (tryInvokeMethod(sessionOptions,
                 new Class<?>[0], new Object[0])) {
             // 旧版本不支持指定GPU ID，发出警告
             if (gpuId != 0) {
@@ -230,21 +232,19 @@ public class ModelManager implements AutoCloseable {
      * 通过反射尝试调用对象的方法
      * 用于兼容不同版本的API，避免编译时依赖不存在的方法
      *
-     * @param target 目标对象
-     * @param methodName 方法名
+     * @param target         目标对象
      * @param parameterTypes 参数类型数组
-     * @param args 参数值数组
+     * @param args           参数值数组
      * @return true表示成功调用，false表示方法不存在
      * @throws Exception 调用失败时抛出异常
      */
-    private boolean tryInvokeMethod(Object target, String methodName,
-                                    Class<?>[] parameterTypes, Object[] args)
+    private boolean tryInvokeMethod(Object target, Class<?>[] parameterTypes, Object[] args)
             throws Exception {
 
         // 获取方法
         Method method;
         try {
-            method = target.getClass().getMethod(methodName, parameterTypes);
+            method = target.getClass().getMethod("addCUDA", parameterTypes);
         } catch (NoSuchMethodException e) {
             // 方法不存在，返回false，让调用方尝试其他方法
             return false;
@@ -302,7 +302,8 @@ public class ModelManager implements AutoCloseable {
 
     private void checkInitialized() {
         if (!initialized) {
-            throw new IllegalStateException("模型管理器未初始化, 请先调用 init() 方法");
+            log.error("模型管理器未初始化, 请先调用 init() 方法");
+            throw new IllegalStateException("The model manager is not initialized, please call the init() method first");
         }
     }
 
@@ -311,7 +312,7 @@ public class ModelManager implements AutoCloseable {
      */
     @Override
     public void close() {
-        log.info("开始释放模型资源");
+        log.debug("开始释放模型资源");
 
         try {
             if (detSession != null) {
@@ -340,6 +341,6 @@ public class ModelManager implements AutoCloseable {
             initialized = false;
         }
 
-        log.info("模型资源释放完成");
+        log.debug("模型资源释放完成");
     }
 }

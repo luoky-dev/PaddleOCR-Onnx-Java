@@ -29,8 +29,11 @@ public class ClsProcessor {
         this.modelConfig = modelManager.getModelConfig();
     }
 
+    /**
+     * 分类检测 - 主流程
+     */
     public void classify(OCRContext context) throws OrtException {
-        log.info("开始分类检测");
+        log.debug("开始分类检测");
         long startTime = System.currentTimeMillis();
         // 预处理
         preprocess(context);
@@ -38,14 +41,15 @@ public class ClsProcessor {
         parse(context);
         // 后处理
         postprocess(context);
-        log.info("分类检测完成, 角度分类完成检测框数量: {}, 耗时: {} ms", context.getClsResultBoxes().size(), System.currentTimeMillis() - startTime);
+        log.debug("分类检测完成, 角度分类完成检测框数量: {}, 耗时: {} ms", context.getClsResultBoxes().size(), System.currentTimeMillis() - startTime);
     }
 
     /**
-     * 预处理: 将检测框图像分批转换为模型输入格式
+     * 分类检测 - 预处理
+     * 将检测框图像分批转换为模型输入格式
      */
     private void preprocess(OCRContext context) throws OrtException {
-        log.info("分类检测 - 预处理阶段");
+        log.debug("分类检测 - 预处理阶段");
         long startTime = System.currentTimeMillis();
         // cls模型输入形状和检测框
         List<TextBox> boxes = context.getDetResultBoxes();
@@ -103,14 +107,15 @@ public class ClsProcessor {
                     .build());
         }
         context.setClsBatches(clsBatches);
-        log.info("分类检测预处理完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
+        log.debug("分类检测预处理完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
     }
-
+    
     /**
-     * 模型推理：分批执行ONNX推理
+     * 分类检测 - 模型推理
+     * 按批次进行模型推理
      */
     private void parse(OCRContext context) throws OrtException {
-        log.info("分类检测 - 模型推理阶段");
+        log.debug("分类检测 - 模型推理阶段");
         long startTime = System.currentTimeMillis();
         List<ClsBatch> clsBatch = context.getClsBatches();
         int batchCount = 0;
@@ -122,7 +127,7 @@ public class ClsProcessor {
             try (OnnxTensor input = OnnxUtil.createBatchInputTensor(chwList, modelManager.getEnv(), batch.getModelInputSize());
                  Result output = modelManager.getClsSession().run(Collections.singletonMap("x", input))) {
                 // 模型输出
-                float[][] prob = OnnxUtil.parseClsOutput(output);
+                float[][] prob = OnnxUtil.parseOnnxValue2D(output);
                 batch.setProb(prob);
                 log.debug("模型推理第 {}/{} 批完成, 本批检测框数量: {}, 方向类别数量: {}", batchCount, clsBatch.size(), prob.length, prob[0].length);
             } catch (OrtException e) {
@@ -130,14 +135,15 @@ public class ClsProcessor {
                 throw e;
             }
         }
-        log.info("模型推理阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
+        log.debug("模型推理阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
     }
-
+    
     /**
-     * 后处理: 解码输出并执行旋转
+     * 分类检测 - 后处理
+     * 解码输出检测框方向并判断是否旋转
      */
     private void postprocess(OCRContext context) {
-        log.info("分类检测 - 后处理检测框旋转纠正阶段");
+        log.debug("分类检测 - 后处理检测框旋转纠正阶段");
         long startTime = System.currentTimeMillis();
         List<ClsBatch> clsBatch = context.getClsBatches();
         List<TextBox> clsResultBoxes = new ArrayList<>();
@@ -186,6 +192,6 @@ public class ClsProcessor {
                 clsResultBoxes.stream().filter(box -> box.isRotate() && box.getAngle() == 90).count(),
                 clsResultBoxes.stream().filter(box -> box.isRotate() && box.getAngle() == 180).count(),
                 clsResultBoxes.stream().filter(box -> box.isRotate() && box.getAngle() == 270).count());
-        log.info("后处理检测框旋转纠正阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
+        log.debug("后处理检测框旋转纠正阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
     }
 }

@@ -23,7 +23,7 @@ public class PaddleOCRService {
      */
     private PaddleOCRService() {
         this.ocrService = PaddleOCRServiceImpl.getInstance();
-        log.info("OCR服务初始化完成（默认配置）");
+        log.debug("OCR服务初始化完成（默认配置）");
     }
 
     /**
@@ -31,7 +31,7 @@ public class PaddleOCRService {
      */
     private PaddleOCRService(OCRConfig config) {
         this.ocrService = PaddleOCRServiceImpl.getInstance(config);
-        log.info("OCR服务初始化完成（自定义配置）");
+        log.debug("OCR服务初始化完成（自定义配置）");
     }
 
     /**

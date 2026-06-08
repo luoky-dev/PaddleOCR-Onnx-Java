@@ -51,80 +51,83 @@ public class OnnxUtil {
     }
 
     /**
-     * 创建批量输入 Tensor
+     * 创建ONNX模型的批量输入张量
+     *
+     * @param chwList  CHW格式的图像数据列表 (每个元素是一张图的像素数据)
+     * @param env      ONNX运行时环境
+     * @param modelInputSize 模型期望的输入尺寸 (高度x宽度)
+     * @return ONNX张量对象, 可直接用于模型推理
+     * @throws OrtException ONNX运行时异常
      */
     public static OnnxTensor createBatchInputTensor(List<float[]> chwList,
                                                     OrtEnvironment env,
                                                     Size modelInputSize) throws OrtException {
+        // 获取批次信息
         int batch = chwList.size();
+        // 定义图像维度
         int channels = 3;
         int height = (int) modelInputSize.height;
         int width = (int) modelInputSize.width;
+        // 计算总数据量
         float[] data = new float[batch * channels * height * width];
+        // 计算单张图像数据量
         int one = channels * height * width;
+        // 将每张图像的数据依次复制到总数组中
         for (int i = 0; i < batch; i++) {
             System.arraycopy(chwList.get(i), 0, data, i * one, one);
         }
+        // 定义ONNX张量的维度形状
         long[] shape = {batch, channels, height, width};
+        // 创建ONNX张量
         return OnnxTensor.createTensor(env, FloatBuffer.wrap(data), shape);
     }
 
     /**
-     * 解析检测模型输出
+     * 解析ONNX模型的3维输出张量为Java 3维数组
+     * @param output ONNX模型运行结果对象, 包含一个或多个输出张量
+     * @return 3维浮点数数组
+     * @throws OrtException 当输出张量不是3维类型时抛出异常
      */
-    public static float[][] parseDetOutput(Result output) throws OrtException {
+    public static float[][][] parseOnnxValue3D(Result output) throws OrtException {
+        // 1. 获取第一个输出张量
         OnnxValue out = output.get(0);
-        try {
-            float[][][][] v4 = (float[][][][]) out.getValue();
-            return v4[0][0];
-        } catch (ClassCastException e1) {
-            try {
-                float[][][] v3 = (float[][][]) out.getValue();
-                return v3[0];
-            } catch (ClassCastException e2) {
-                throw new OrtException("Unsupported det output shape");
-            }
-        }
-    }
-
-    /**
-     * 解析分类模型输出（角度分类）
-     * 模型输出形状：[batch, classes] 或 [batch, 1, classes]
-     */
-    public static float[][] parseClsOutput(Result output) throws OrtException {
-        OnnxValue v = output.get(0);
-        Object value = v.getValue();
-        if (value instanceof float[][]) {
-            return (float[][]) value;
-        }
-        if (value instanceof float[][][]) {
-            float[][][] v3 = (float[][][]) value;
-            float[][] result = new float[v3.length][];
-            for (int i = 0; i < v3.length; i++) {
-                result[i] = v3[i][0];
-            }
-            return result;
-        }
-        throw new OrtException("Unsupported cls output shape");
-    }
-
-    /**
-     * 解析 rec 输出为 [batch_size, time_steps, num_classes]
-     */
-    public static float[][][] parseRecOutput(Result output) throws OrtException {
-        OnnxValue v = output.get(0);
-        Object value = v.getValue();
-        if (value instanceof float[][][]) {
-            return (float[][][]) value;
-        }
-        if (value instanceof float[][]) {
-            float[][] v2 = (float[][]) value;
-            return new float[][][]{v2};
-        }
+        // 2. 获取张量的实际Java对象
+        Object value = out.getValue();
+        // 3. 类型检查和转换
         if (value instanceof float[][][][]) {
-            float[][][][] v4 = (float[][][][]) value;
-            return v4[0];
+            float[][][][] value4D = (float[][][][]) value;
+            return value4D[0];
+        } else if (value instanceof float[][][]) {
+            return (float[][][]) value;
+        } else {
+            // 类型不匹配，抛出异常
+            throw new OrtException("Unsupported output shape");
         }
-        throw new OrtException("Unsupported rec output shape");
+    }
+
+    /**
+     * 解析ONNX模型的2维输出张量为Java 2维数组
+     * @param output ONNX模型运行结果对象, 包含一个或多个输出张量
+     * @return 2维浮点数数组
+     * @throws OrtException 当输出张量不是2维类型时抛出异常
+     */
+    public static float[][] parseOnnxValue2D(Result output) throws OrtException {
+        // 1. 获取第一个输出张量
+        OnnxValue out = output.get(0);
+        // 2. 获取张量的实际Java对象
+        Object value = out.getValue();
+        // 3. 类型检查和转换
+        if (value instanceof float[][][][]) {
+            float[][][][] value4D = (float[][][][]) value;
+            return value4D[0][0];
+        } else if (value instanceof float[][][]) {
+            float[][][] value3D = (float[][][]) value;
+            return value3D[0];
+        } else if (value instanceof float[][]) {
+            return (float[][]) value;
+        } else {
+            // 类型不匹配，抛出异常
+            throw new OrtException("Unsupported output shape");
+        }
     }
 }
