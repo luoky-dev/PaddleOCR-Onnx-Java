@@ -34,15 +34,20 @@ public class RecProcessor {
     /**
      * 图像识别 - 主流程
      */
-    public void recognize(OCRContext context) throws OrtException {
+    public void recognize(OCRContext context) {
         log.debug("开始图像识别");
         long startTime = System.currentTimeMillis();
-        // 预处理
-        preprocess(context);
-        // 模型推理
-        parse(context);
-        // 后处理
-        postprocess(context);
+        try {
+            // 预处理
+            preprocess(context);
+            // 模型推理
+            parse(context);
+            // 后处理
+            postprocess(context);
+        } catch (Exception e) {
+            log.error("图像识别失败, 错误信息:",e);
+            throw new RuntimeException("Runtime error, recognition failed");
+        }
         log.debug("图像识别完成, 识别成功检测框数量: {}, 耗时: {} ms", context.getRecResultBoxes().size(), System.currentTimeMillis() - startTime);
     }
 
@@ -74,23 +79,19 @@ public class RecProcessor {
             Mat cropMat = OpenCVUtil.perspectiveTransformCrop(rawCropMat, textBox.getPoints());
             // 将已裁剪区域置空
             OpenCVUtil.fillPolyWhite(rawCropMat, textBox.getPoints());
-            log.trace("图像裁剪完成, 裁剪图尺寸: H:{} x W:{} ", cropMat.height(), cropMat.width());
+            log.trace("检测框裁剪完成, 裁剪图尺寸: H:{} x W:{} ", cropMat.height(), cropMat.width());
             // 旋转纠正
-            Mat rotateMat;
             if (textBox.getAngle() != 0 && textBox.isRotate()) {
-                rotateMat = OpenCVUtil.rotate(cropMat, textBox.getAngle());
-                log.trace("图像按角度旋转纠正完成: {}° -> 0° ", textBox.getAngle());
-            } else {
-                rotateMat = cropMat;
+                OpenCVUtil.rotate(cropMat, textBox.getAngle());
+                log.trace("裁剪图按角度旋转纠正完成: {}° -> 0° ", textBox.getAngle());
             }
             // 缩放到固定高度并转换通道
-            Size fixHeightSize = OpenCVUtil.getFixHeightSize(rotateMat.size(), modelInputH);
-            Mat rgbMat = OpenCVUtil.resizeToRGB(rotateMat, fixHeightSize);
-            log.trace("图像缩放完成: H:{} x W:{} -> H:{} x W:{}",
-                    rotateMat.height(), rotateMat.width(), rgbMat.height(), rgbMat.width());
+            Size fixHeightSize = OpenCVUtil.getFixHeightSize(cropMat.size(), modelInputH);
+            Mat rgbMat = OpenCVUtil.resizeToRGB(cropMat, fixHeightSize);
+            log.trace("裁剪图缩放完成: H:{} x W:{} -> H:{} x W:{}",
+                    cropMat.height(), cropMat.width(), rgbMat.height(), rgbMat.width());
             originalOrderMap.put(textBox, rgbMat);
             OpenCVUtil.releaseMat(cropMat);
-            OpenCVUtil.releaseMat(rotateMat);
         });
         OpenCVUtil.releaseMat(rawCropMat);
         // 分组并对齐步长倍数 + padding
@@ -117,11 +118,11 @@ public class RecProcessor {
                 // 填充
                 Mat srcMat = orderList.get(index).getValue();
                 Mat paddedMat = OpenCVUtil.padding(srcMat, modelInputSize);
-                log.trace("图像填充完成: H:{} x W:{} -> H:{} x W:{}",
+                log.trace("裁剪图填充完成: H:{} x W:{} -> H:{} x W:{}",
                         srcMat.height(), srcMat.width(), paddedMat.height(), paddedMat.width());
                 // 归一化并转换CHW格式
                 float[] chwData = OpenCVUtil.normalizeToCHW(paddedMat, modelConfig.getLinearMean(), modelConfig.getLinearStd());
-                log.trace("图像归一标准化完成, 均值: {}, 标准差: {}",
+                log.trace("裁剪图归一标准化完成, 均值: {}, 标准差: {}",
                         Arrays.toString(modelConfig.getLinearMean()),
                         Arrays.toString(modelConfig.getLinearStd()));
                 chwList.add(chwData);
@@ -214,7 +215,7 @@ public class RecProcessor {
                 // 获取所有时间步解码结果
                 List<int[]> ctcResult = new ArrayList<>();
                 for (float[] timeStep : boxProb) {
-                    // 解码：返回 [最大概率索引, 编码后的概率值]
+                    // 解码: 返回 [最大概率索引, 编码后的概率值]
                     int[] decoded = OpenCVUtil.decode(timeStep);
                     ctcResult.add(decoded);
                 }
@@ -264,9 +265,9 @@ public class RecProcessor {
                         .orElse(0.0);
 
                 log.debug("当前检测框最终识别结果: {}, 置信度: {}, 最低置信度阈值: {}", recText, confidence, ocrConfig.getRecThresh());
+                box.setRecText(recText);
+                box.setRecConfidence((float) confidence);
                 if(confidence > ocrConfig.getRecThresh()) {
-                    box.setRecText(recText);
-                    box.setRecConfidence((float) confidence);
                     recResultBoxes.add(box);
                 } else  {
                     filterCount ++;

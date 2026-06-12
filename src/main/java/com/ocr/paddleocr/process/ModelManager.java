@@ -127,7 +127,7 @@ public class ModelManager implements AutoCloseable {
 
     /**
      * 构建ONNX Runtime会话配置选项
-     * 根据配置决定使用CPU还是GPU，支持GPU失败时自动降级到CPU
+     * 根据配置决定使用CPU还是GPU, 支持GPU失败时自动降级到CPU
      *
      * @return 配置好的SessionOptions对象
      * @throws OrtException ONNX Runtime异常
@@ -135,7 +135,7 @@ public class ModelManager implements AutoCloseable {
     private SessionOptions buildSessionOptions() throws OrtException {
 
         // ========== CPU模式 ==========
-        // 如果配置不使用GPU，直接返回CPU配置
+        // 如果配置不使用GPU, 直接返回CPU配置
         if (!ocrConfig.isUseGpu()) {
             SessionOptions cpuOptions = new SessionOptions();
             applyCommonSessionOptions(cpuOptions);
@@ -158,7 +158,7 @@ public class ModelManager implements AutoCloseable {
             return gpuOptions;
 
         } catch (Exception e) {
-            // GPU初始化失败，释放资源并降级到CPU
+            // GPU初始化失败, 释放资源并降级到CPU
             closeSessionOptionsQuietly(gpuOptions);
             log.warn("启用CUDA提供程序失败, 回退到CPU配置, gpuId: {}", gpuId, e);
 
@@ -197,7 +197,7 @@ public class ModelManager implements AutoCloseable {
      * 启用CUDA提供程序 (GPU加速) 
      * 兼容不同版本的ONNX Runtime Java API
      * - 新版本: addCUDA(int deviceId)
-     * - 旧版本: addCUDA() 无参数，默认设备0
+     * - 旧版本: addCUDA() 无参数, 默认设备0
      *
      * @param sessionOptions 会话选项
      * @param gpuId GPU设备ID
@@ -209,13 +209,13 @@ public class ModelManager implements AutoCloseable {
         // 尝试调用 addCUDA(int) 方法 (新版本API) 
         if (tryInvokeMethod(sessionOptions,
                 new Class<?>[]{int.class}, new Object[]{gpuId})) {
-            return;  // 成功，直接返回
+            return;  // 成功, 直接返回
         }
 
         // 尝试调用 addCUDA() 无参方法 (旧版本API) 
         if (tryInvokeMethod(sessionOptions,
                 new Class<?>[0], new Object[0])) {
-            // 旧版本不支持指定GPU ID，发出警告
+            // 旧版本不支持指定GPU ID, 发出警告
             if (gpuId != 0) {
                 log.warn("Current ONNX Runtime Java API does not expose addCUDA(int). " +
                         "gpuId={} may be ignored.", gpuId);
@@ -223,19 +223,19 @@ public class ModelManager implements AutoCloseable {
             return;
         }
 
-        // 两个方法都不存在，说明当前版本不支持CUDA
+        // 两个方法都不存在, 说明当前版本不支持CUDA
         throw new IllegalStateException(
                 "Current ONNX Runtime Java API does not support CUDA provider.");
     }
 
     /**
      * 通过反射尝试调用对象的方法
-     * 用于兼容不同版本的API，避免编译时依赖不存在的方法
+     * 用于兼容不同版本的API, 避免编译时依赖不存在的方法
      *
      * @param target         目标对象
      * @param parameterTypes 参数类型数组
      * @param args           参数值数组
-     * @return true表示成功调用，false表示方法不存在
+     * @return true表示成功调用, false表示方法不存在
      * @throws Exception 调用失败时抛出异常
      */
     private boolean tryInvokeMethod(Object target, Class<?>[] parameterTypes, Object[] args)
@@ -246,11 +246,11 @@ public class ModelManager implements AutoCloseable {
         try {
             method = target.getClass().getMethod("addCUDA", parameterTypes);
         } catch (NoSuchMethodException e) {
-            // 方法不存在，返回false，让调用方尝试其他方法
+            // 方法不存在, 返回false, 让调用方尝试其他方法
             return false;
         }
 
-        // 2. 调用方法
+        // 调用方法
         try {
             method.invoke(target, args);
             return true;

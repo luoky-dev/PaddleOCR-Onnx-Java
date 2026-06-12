@@ -16,7 +16,6 @@ import org.opencv.core.*;
 import org.opencv.imgproc.Imgproc;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Slf4j
 public class DetProcessor {
@@ -34,15 +33,20 @@ public class DetProcessor {
     /**
      * 图像检测 - 主流程
      */
-    public void detect(OCRContext context) throws OrtException {
+    public void detect(OCRContext context) {
         log.debug("开始图像检测");
         long startTime = System.currentTimeMillis();
-        // 预处理
-        preprocess(context);
-        // 模型推理
-        parse(context);
-        // 后处理
-        postprocess(context);
+        try {
+            // 预处理
+            preprocess(context);
+            // 模型推理
+            parse(context);
+            // 后处理
+            postprocess(context);
+        } catch (Exception e) {
+            log.error("图像检测失败, 错误信息:",e);
+            throw new RuntimeException("Runtime error, recognition failed");
+        }
         log.debug("图像检测完成, 检测成功检测框数量: {}, 耗时: {} ms", context.getDetResultBoxes().size(), System.currentTimeMillis() - startTime);
     }
 
@@ -55,6 +59,10 @@ public class DetProcessor {
         long startTime = System.currentTimeMillis();
         // det模型输入形状和原图
         Mat rawMat = context.getRawMat();
+        if (rawMat == null || rawMat.empty()) {
+            log.error("图片不合法, 图像检测失败");
+            throw new RuntimeException("The image is invalid, detection failed");
+        }
         long[] modelInputShape = OnnxUtil.getModelInputShape(modelManager.getDetSession());
         // 判断模型输入
         if (modelInputShape[2] != modelInputShape[3]) {
@@ -68,10 +76,10 @@ public class DetProcessor {
         log.debug("原始图像尺寸: H:{} x W:{} ", rawMat.height(), rawMat.width());
         // 确定长边限制大小
         // 固定输入模型: 严格按模型声明尺寸送入
-        // 动态输入模型: 使用配置的最大边长
+        // 动态输入模型: 使用原始图像尺寸的最大边长
         int limitSize = modelInputShape[2] != -1 && modelInputShape[3] != -1 ?
                 Math.max(Math.toIntExact(modelInputShape[2]), Math.toIntExact(modelInputShape[3])) :
-                ocrConfig.getDetModelMaxSide();
+                Math.max(rawMat.height(), rawMat.width());
         log.debug("长边限制大小: {}", limitSize);
         // 长边限制 + 对齐
         Size targetSize = OpenCVUtil.longSideLimitToStride(rawSize, limitSize, modelConfig.getStride());
@@ -80,8 +88,8 @@ public class DetProcessor {
         log.debug("图像缩放完成: H:{} x W:{} -> H:{} x W:{}",
                 rawMat.height(), rawMat.width(), rgbMat.height(), rgbMat.width());
         // 填充
-        int modelInputH = Math.toIntExact(modelInputShape[3] == -1 ? limitSize : modelInputShape[3]);
-        int modelInputW = Math.toIntExact(modelInputShape[2] == -1 ? limitSize : modelInputShape[2]);
+        int modelInputH = Math.toIntExact(modelInputShape[3] == -1 ? (long) targetSize.height : modelInputShape[3]);
+        int modelInputW = Math.toIntExact(modelInputShape[2] == -1 ? (long) targetSize.width : modelInputShape[2]);
         Size modelInputSize = new Size(modelInputW, modelInputH);
         Mat paddedMat = OpenCVUtil.padding(rgbMat, modelInputSize);
         log.debug("图像填充完成: H:{} x W:{} -> H:{} x W:{}",
@@ -144,8 +152,8 @@ public class DetProcessor {
         // 查找轮廓
         List<MatOfPoint> contours = findContours(probMat);
         if (contours.isEmpty()) {
-            log.error("轮廓检测完成, 未检测出轮廓, 图像识别失败");
-            context.setDetResultBoxes(List.of());
+            log.error("轮廓检测完成, 未检测出轮廓框, 图像识别失败");
+            throw new RuntimeException("No contour box detected, recognition failed");
         }
         // 限制候选框数量
         if (contours.size() > ocrConfig.getBoxLimit()) {
@@ -153,31 +161,11 @@ public class DetProcessor {
             log.debug("超过轮廓框数量限制, 保留前 {} 个", ocrConfig.getBoxLimit());
         }
         // 轮廓解析计算
-        parseContours(contours, probMat, detState);
-        // 按阅读顺序对检测框排序
-        List<ContourBox> boxes = detState.getContourBoxes();
-        Map<Integer, Point[]> orderMap = OpenCVUtil.orderByRead(
-                boxes.stream()
-                        .map(ContourBox::getRestorePoints)
-                        .filter(Objects::nonNull)
-                        .collect(Collectors.toList())
-        );
-        // 设置检测结果
-        List<TextBox> textBoxes = new ArrayList<>();
-        orderMap.forEach( (index, points) -> textBoxes.add(
-                TextBox.builder().
-                        index(index).
-                        points(points).
-                        build()));
+        List<TextBox> textBoxes = parseContours(contours, probMat, detState);
+        // 设值
         context.setDetResultBoxes(textBoxes);
         // 资源释放
         OpenCVUtil.releaseMat(probMat);
-        // 输出统计信息
-        log.debug("结果统计 - 总轮廓框: {}, 有效检测框: {}", contours.size(), orderMap.size());
-        log.debug("过滤统计 - 噪声框过滤: {}, 置信度不足过滤: {}, 多边近似失败过滤: {}",
-                boxes.stream().filter(ContourBox::isNoiseFilter).count(),
-                boxes.stream().filter(ContourBox::isScoreFilter).count(),
-                boxes.stream().filter(ContourBox::isApproxFilter).count());
         log.debug("后处理检测框提取阶段完成, 耗时: {} ms", System.currentTimeMillis() - startTime);
     }
 
@@ -187,15 +175,10 @@ public class DetProcessor {
     private List<MatOfPoint> findContours(Mat probMat){
         log.debug("开始轮廓检测");
         // 1.二值化: 概率图 > 阈值 的区域为文本区域
-        float detThresh = ocrConfig.getBitThresh();
-        Mat bitmap = new Mat();
-        Imgproc.threshold(probMat, bitmap, detThresh, 255, Imgproc.THRESH_BINARY);
-        log.debug("二值化完成, 阈值: {}", detThresh);
+        Mat bitmap = OpenCVUtil.threshold(probMat, ocrConfig.getBitThresh());
+        log.debug("二值化完成, 阈值: {}", ocrConfig.getBitThresh());
 
-        // 2.转换为 8位 单通道
-        bitmap.convertTo(bitmap, CvType.CV_8UC1);
-
-        // 3.可选膨胀操作, 用于连接相邻的文本区域
+        // 2.可选膨胀操作, 用于连接相邻的文本区域
         if (ocrConfig.isDilation()) {
             int kernelSize = modelConfig.getDilateKernelSize();
             Mat kernel = Imgproc.getStructuringElement(
@@ -205,7 +188,7 @@ public class DetProcessor {
             log.debug("膨胀操作完成, 核大小: {}", kernelSize);
         }
 
-        // 4.查找轮廓
+        // 3.查找轮廓
         List<MatOfPoint> contours = new ArrayList<>();
         Mat hierarchy = new Mat();
         Imgproc.findContours(bitmap, contours, hierarchy,
@@ -222,8 +205,10 @@ public class DetProcessor {
     /**
      * 轮廓框过滤解析
      */
-    private void parseContours(List<MatOfPoint> contours, Mat probMat, DetState detState){
-        log.debug("开始轮廓解析过滤");
+    private List<TextBox> parseContours(List<MatOfPoint> contours, Mat probMat, DetState detState){
+        log.debug("开始轮廓框解析过滤");
+        // 设置检测结果
+        List<TextBox> textBoxes = new ArrayList<>();
         List<ContourBox> contourBoxes = new ArrayList<>();
         for (int i = 0; i < contours.size(); i++) {
             log.trace("当前处理第 {} 个轮廓框: ", i);
@@ -312,29 +297,45 @@ public class DetProcessor {
             // 7.坐标还原
             Point[] restorePoints = OpenCVUtil.restorePoints(
                     unclipPoints, detState.getResizeMatSize(), detState.getRawMatSize());
+            contourBox.setRestorePoints(restorePoints);
             log.trace("当前轮廓框坐标已还原到原图, 缩放图: H:{} x W:{}, 原图: H:{} x W:{}",
                     detState.getResizeMatSize().height, detState.getResizeMatSize().width,
                     detState.getRawMatSize().height, detState.getRawMatSize().width);
             log.trace("还原前顶点: {}", Arrays.asList(unclipPoints));
             log.trace("还原后顶点: {}", Arrays.asList(restorePoints));
 
-            // 8.纵形轮廓框顶点重新排序
+            // 8.纵形轮廓框判断
             Size rectSize = OpenCVUtil.getRectSize(restorePoints);
             double aspectRatio = rectSize.width / Math.max(1, rectSize.height);
             contourBox.setAspectRatio(aspectRatio);
             log.trace("当前四边形轮廓框宽高比: {}, 最低宽高比阈值: {}", aspectRatio, ocrConfig.getBoxMinAspectRatio());
-            // 最小宽高比顶点重新排序
+
+            // 9.设值
+            TextBox box = new TextBox();
+            box.setPoints(restorePoints);
+            box.setAspectRatio(aspectRatio);
+            box.setScore(score);
             if (aspectRatio < ocrConfig.getBoxMinAspectRatio()) {
-                log.trace("宽高比过低, 纵形轮廓框顶点重新排序");
-                log.trace("重新排序前顶点: {}", Arrays.asList(restorePoints));
-                restorePoints = OpenCVUtil.rotateOrderPoints(restorePoints);
-                log.trace("重新排序后顶点: {}", Arrays.asList(restorePoints));
-                log.trace("重新排序后宽高比: {}", rectSize.height / Math.max(1, rectSize.width));
+                box.setAngle(90);
+                box.setRotate(true);
             }
-            contourBox.setRestorePoints(restorePoints);
+            textBoxes.add(box);
         }
+        // 按模型输出的倒序排列
+        Collections.reverse(textBoxes);
+        // 设置序号
+        for (int index = 1; index <= textBoxes.size(); index++) {
+            textBoxes.get(index - 1).setIndex(index);
+        }
+        // 输出统计信息
+        log.info("结果统计 - 总轮廓框: {}, 有效检测框: {}", contours.size(), textBoxes.size());
+        log.info("过滤统计 - 噪声框过滤: {}, 置信度不足过滤: {}, 多边近似失败过滤: {}",
+                contourBoxes.stream().filter(ContourBox::isNoiseFilter).count(),
+                contourBoxes.stream().filter(ContourBox::isScoreFilter).count(),
+                contourBoxes.stream().filter(ContourBox::isApproxFilter).count());
         // 资源释放
         contours.forEach(OpenCVUtil::releaseMat);
         detState.setContourBoxes(contourBoxes);
+        return textBoxes;
     }
 }

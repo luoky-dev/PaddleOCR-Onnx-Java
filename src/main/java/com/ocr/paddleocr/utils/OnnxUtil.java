@@ -51,6 +51,35 @@ public class OnnxUtil {
     }
 
     /**
+     * 从 ONNX Runtime 会话中提取模型的输出张量形状
+     * @param session ONNX Runtime 会话
+     * @return long[] 输出张量形状
+     * @throws OrtException 异常信息
+     */
+    public static long[] getModelOutputShape(OrtSession session) throws OrtException {
+        // 获取模型输出信息
+        Map<String, NodeInfo> outputInfo = session.getOutputInfo();
+        // 验证输出不为空
+        if (outputInfo == null || outputInfo.isEmpty()) {
+            throw new OrtException("Model has no output info");
+        }
+        // 获取第一个输出（大多数模型只有一个输出）
+        Map.Entry<String, NodeInfo> first = outputInfo.entrySet().iterator().next();
+        NodeInfo nodeInfo = first.getValue();
+        // 验证类型为 TensorInfo
+        if (!(nodeInfo.getInfo() instanceof TensorInfo)) {
+            throw new OrtException("Output info is not TensorInfo");
+        }
+        // 提取形状数组
+        long[] shape = ((TensorInfo) nodeInfo.getInfo()).getShape();
+        // 验证形状有效性
+        if (shape == null || shape.length == 0) {
+            throw new OrtException("Output shape is invalid");
+        }
+        return shape;
+    }
+
+    /**
      * 创建ONNX模型的批量输入张量
      *
      * @param chwList  CHW格式的图像数据列表 (每个元素是一张图的像素数据)

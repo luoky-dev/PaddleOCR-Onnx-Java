@@ -20,7 +20,6 @@ import java.util.List;
 public class PaddleOCRServiceImpl {
 
     private static volatile PaddleOCRServiceImpl instance;
-    private static volatile PaddleOCRServiceImpl customInstance;
     private final Gson gson;
     private final ModelManager modelManager;
     private final DetProcessor detProcessor;
@@ -30,14 +29,7 @@ public class PaddleOCRServiceImpl {
     private volatile boolean initialized;
 
     /**
-     * 私有构造 - 使用默认配置
-     */
-    private PaddleOCRServiceImpl() {
-        this(OCRConfig.builder().build());
-    }
-
-    /**
-     * 私有构造 - 使用自定义配置
+     * 私有构造
      */
     private PaddleOCRServiceImpl(OCRConfig ocrConfig) {
         if (ocrConfig == null) {
@@ -66,33 +58,19 @@ public class PaddleOCRServiceImpl {
     }
 
     /**
-     * 获取单例实例 - 使用默认配置
+     * 获取单例实例
      */
-    public static PaddleOCRServiceImpl getInstance() {
+    public static PaddleOCRServiceImpl getInstance(OCRConfig config) {
         if (instance == null) {
             synchronized (PaddleOCRServiceImpl.class) {
                 if (instance == null) {
-                    instance = new PaddleOCRServiceImpl();
-                }
-            }
-        }
-        return instance;
-    }
-
-    /**
-     * 获取单例实例 - 使用自定义配置
-     */
-    public static PaddleOCRServiceImpl getInstance(OCRConfig config) {
-        if (customInstance == null) {
-            synchronized (PaddleOCRServiceImpl.class) {
-                if (customInstance == null) {
-                    customInstance = new PaddleOCRServiceImpl(config);
+                    instance = new PaddleOCRServiceImpl(config);
                 } else {
                     log.warn("OCRServiceImpl已使用自定义配置初始化, 新配置将被忽略");
                 }
             }
         }
-        return customInstance;
+        return instance;
     }
 
     /**
@@ -102,8 +80,11 @@ public class PaddleOCRServiceImpl {
      * @return JSON格式的识别结果
      */
     public String recognize(String imagePath) {
+        log.info("PaddleOCR开始识别");
         OCRResult result = rec(imagePath);
-        return gson.toJson(result);
+        String resultJson = gson.toJson(result);
+        log.info("PaddleOCR识别完成, 识别结果: {}", resultJson);
+        return resultJson;
     }
 
     /**
@@ -113,7 +94,6 @@ public class PaddleOCRServiceImpl {
      * @return OCRResult对象
      */
     private OCRResult rec(String imagePath) {
-        log.debug("PaddleOCR服务开始");
         long startTime = System.currentTimeMillis();
         OCRResult.OCRResultBuilder builder = OCRResult.builder()
                 .imagePath(imagePath)
@@ -121,6 +101,10 @@ public class PaddleOCRServiceImpl {
         OCRContext context = new OCRContext();
         context.setImagePath(imagePath);
         try {
+            if (imagePath == null || imagePath.trim().isEmpty()) {
+                log.error("图片路径无效, 识别失败");
+                throw new RuntimeException("Image path is invalid, recognition failed");
+            }
             if (!initialized) {
                 log.error("OCR服务未初始化, 识别失败");
                 throw new RuntimeException("OCR service not initialized, recognition failed");

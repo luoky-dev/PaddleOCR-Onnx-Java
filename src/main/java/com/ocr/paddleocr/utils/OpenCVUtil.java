@@ -14,65 +14,16 @@ import java.util.*;
 public class OpenCVUtil {
 
 
-    // 预定义颜色（BGR格式）
-    public static final Scalar COLOR_RED = new Scalar(0, 0, 255);
-    public static final Scalar COLOR_GREEN = new Scalar(0, 255, 0);
-    public static final Scalar COLOR_BLUE = new Scalar(255, 0, 0);
-    public static final Scalar COLOR_YELLOW = new Scalar(0, 255, 255);
-    public static final Scalar COLOR_CYAN = new Scalar(255, 255, 0);
-    public static final Scalar COLOR_MAGENTA = new Scalar(255, 0, 255);
-    public static final Scalar COLOR_WHITE = new Scalar(255, 255, 255);
-    public static final Scalar COLOR_BLACK = new Scalar(0, 0, 0);
+    // 预定义颜色 - BGR格式
+    private static final Scalar COLOR_RED = new Scalar(0, 0, 255);
+    private static final Scalar COLOR_GREEN = new Scalar(0, 255, 0);
+    private static final Scalar COLOR_WHITE = new Scalar(255, 255, 255);
+    private static final Scalar COLOR_BLACK = new Scalar(0, 0, 0);
 
     /**
-     * 在图像上绘制检测框
-     *
-     * @param image 原始图像
-     * @param boxes 检测框坐标列表
-     * @param color 框颜色
-     * @param thickness 线条粗细
-     * @return 绘制后的图像（克隆，不影响原图）
+     * 绘制检测框
      */
-    public static Mat drawBoxes(Mat image, List<Point[]> boxes, Scalar color, int thickness) {
-        if (image == null || image.empty()) {
-            return null;
-        }
-
-        if (boxes == null || boxes.isEmpty()) {
-            return image.clone();
-        }
-
-        // 克隆图像，避免修改原图
-        Mat result = image.clone();
-
-        for (int i = 0; i < boxes.size(); i++) {
-            Point[] box = boxes.get(i);
-            if (box == null || box.length < 4) {
-                continue;
-            }
-
-            // 绘制多边形
-            drawPolygon(result, box, color, thickness);
-
-            // 可选：绘制序号
-//            Point center = getCenter(box);
-//            putText(result, String.valueOf(i + 1), center, color);
-        }
-
-        return result;
-    }
-
-    /**
-     * 在图像上绘制检测框（使用默认颜色和粗细）
-     */
-    public static Mat drawBoxes(Mat image, List<Point[]> boxes) {
-        return drawBoxes(image, boxes, COLOR_GREEN, 2);
-    }
-
-    /**
-     * 绘制多边形
-     */
-    public static void drawPolygon(Mat image, Point[] points, Scalar color, int thickness) {
+    public static void drawBox(Mat image, Point[] points) {
 
         // 将点转换为 MatOfPoint
         MatOfPoint matOfPoint = new MatOfPoint();
@@ -80,161 +31,51 @@ public class OpenCVUtil {
 
         // 绘制多边形轮廓
         Imgproc.polylines(image, Collections.singletonList(matOfPoint),
-                true, color, thickness);
+                true, COLOR_GREEN, 2);
 
         OpenCVUtil.releaseMat(matOfPoint);
     }
 
-    public static void drawPolygon(Mat image, Point[] points) {
-        drawPolygon(image, points, COLOR_GREEN, 2);
-    }
-
-    public static void drawText(Mat image, String text, Point position, Scalar color, double fontScale, int thickness) {
-        if (image == null || image.empty() || text == null || position == null) {
-            return;
-        }
-        Imgproc.putText(image, text, position, Imgproc.FONT_HERSHEY_SIMPLEX, fontScale, color, thickness);
-    }
-
-    public static void drawText(Mat image, String text, Point position) {
-        drawText(image, text, position, COLOR_GREEN,0.5, 1);
-    }
-
     /**
-     * 绘制矩形框（轴对齐）
+     * 添加文本
      */
-    public static Mat drawRects(Mat image, List<Rect> rects, Scalar color, int thickness) {
-        if (image == null || image.empty()) {
-            return null;
-        }
+    public static void putText(Mat image, String text, Point[] points) {
+        // 获取文本框的左上角 - 最小x和最小y
+        double minX = Double.MAX_VALUE;
+        double minY = Double.MAX_VALUE;
 
-        Mat result = image.clone();
-
-        for (Rect rect : rects) {
-            Imgproc.rectangle(result, rect.tl(), rect.br(), color, thickness);
-        }
-
-        return result;
-    }
-
-    /**
-     * 绘制旋转矩形框
-     */
-    public static Mat drawRotatedRects(Mat image, List<RotatedRect> rects, Scalar color, int thickness) {
-        if (image == null || image.empty()) {
-            return null;
-        }
-
-        Mat result = image.clone();
-
-        for (RotatedRect rect : rects) {
-            Point[] vertices = new Point[4];
-            rect.points(vertices);
-            drawPolygon(result, vertices, color, thickness);
-        }
-
-        return result;
-    }
-
-    /**
-     * 获取多边形中心点
-     */
-    private static Point getCenter(Point[] points) {
-        if (points == null) {
-            return new Point(0, 0);
-        }
-
-        double sumX = 0, sumY = 0;
         for (Point p : points) {
-            sumX += p.x;
-            sumY += p.y;
+            minX = Math.min(minX, p.x);
+            minY = Math.min(minY, p.y);
         }
-        return new Point(sumX / points.length, sumY / points.length);
-    }
 
-    /**
-     * 在图像上添加文本
-     */
-    private static void putText(Mat image, String text, Point position, Scalar color) {
-        // 添加背景矩形使文字更清晰
-        int fontFace = Imgproc.FONT_HERSHEY_SIMPLEX;
-        double fontScale = 0.5;
-        int thicknessText = 1;
-
-        // 使用数组来模拟引用传递
-        int[] baseline = new int[1];
-        Size textSize = Imgproc.getTextSize(text, fontFace, fontScale, thicknessText, baseline);
-
-        // 绘制背景矩形
-        int bgX = (int) position.x - 2;
-        int bgY = (int) position.y - (int) textSize.height - 2;
-        int bgWidth = (int) textSize.width + 4;
-        int bgHeight = (int) textSize.height + baseline[0] + 4;
-
-        Rect bgRect = new Rect(bgX, bgY, bgWidth, bgHeight);
-        Imgproc.rectangle(image, bgRect.tl(), bgRect.br(), COLOR_BLACK, -1);
+        // 计算标签位置 - 文本框上方
+        Point labelPos = new Point(minX, minY - 5);
 
         // 绘制文字
-        Point textPos = new Point(position.x, position.y);
-        Imgproc.putText(image, text, textPos, fontFace, fontScale, color, thicknessText);
-    }
-
-    /**
-     * 根据置信度获取颜色
-     */
-    private static Scalar getColorByConfidence(float confidence) {
-        if (confidence >= 0.8) {
-            return COLOR_GREEN;      // 高置信度 - 绿色
-        } else if (confidence >= 0.5) {
-            return COLOR_YELLOW;     // 中置信度 - 黄色
-        } else {
-            return COLOR_RED;        // 低置信度 - 红色
-        }
+        Imgproc.putText(image, text, labelPos, Imgproc.FONT_HERSHEY_SIMPLEX,
+                0.5, COLOR_RED, 1, Imgproc.LINE_AA, false);
     }
 
     /**
      * 保存图像
      */
     public static void saveImage(Mat image, String outputPath) {
-        if (image == null || image.empty()) {
-            throw new IllegalArgumentException("Image cannot be empty");
-        }
-
-        File outputFile = new File(outputPath);
-        File parentDir = outputFile.getParentFile();
-        if (parentDir != null && !parentDir.exists() && !parentDir.mkdirs()) {
-            throw new IllegalStateException("Failed to create parent directory: " + parentDir.getAbsolutePath());
-        }
-
         Imgcodecs.imwrite(outputPath, image);
     }
 
     /**
      * 读取图像
      */
-    public static Mat getImage(String inputPath){
-        if (inputPath == null || inputPath.trim().isEmpty()) {
-            throw new IllegalArgumentException("Path cannot be empty");
-        }
-        Mat image = Imgcodecs.imread(inputPath);
-        if (image.empty()) {
-            throw new IllegalArgumentException("Unable to read image");
-        }
-        return image;
+    public static Mat getImage(String inputPath) {
+        return Imgcodecs.imread(inputPath);
     }
 
     /**
      * 获取图像名
      */
-    public static String getImageName(String inputPath){
-        if (inputPath == null || inputPath.trim().isEmpty()) {
-            throw new IllegalArgumentException("Path cannot be empty");
-        }
-        File file = new File(inputPath);
-        if (!file.exists()) {
-            throw new IllegalArgumentException("Unable to read image");
-        }
-        return file.getName();
+    public static String getImageName(String inputPath) {
+        return new File(inputPath).getName();
     }
 
     /**
@@ -360,7 +201,7 @@ public class OpenCVUtil {
             }
         }
 
-        // 4. 重新排列，从左上角开始
+        // 4. 重新排列, 从左上角开始
         Point[] result = new Point[4];
         for (int i = 0; i < 4; i++) {
             result[i] = orderPoints.get((leftTopIndex + i) % 4);
@@ -370,9 +211,9 @@ public class OpenCVUtil {
     }
 
     /**
-     * 交换四点顺序，实现宽高交换（竖排转横排）
-     * @param points 原始四点坐标（已排序：左上、右上、右下、左下）
-     * @return 交换后的四点坐标
+     * 交换四点顺序 - 宽高交换、竖排转横排
+     * @param points 原始四点坐标 - [0]左上, [1]右上, [2]右下, [3]左下
+     * @return 交换后的四点坐标 - [0]左上, [1]左下, [2]右下, [3]右上
      */
     public static Point[] rotateOrderPoints(Point[] points) {
         if (points == null || points.length != 4) {
@@ -416,9 +257,10 @@ public class OpenCVUtil {
 
     /**
      * 将尺寸中的宽度对齐到strideSize倍数
+     * 高度不变, 宽度对齐
      * @param srcSize 原始尺寸
      * @param strideSize 对齐步长
-     * @return 对齐后的尺寸（高度不变，宽度对齐）
+     * @return 对齐后的尺寸
      */
     public static Size widthToStride(Size srcSize, int strideSize) {
         int alignedWidth = ((int) srcSize.width + strideSize - 1) / strideSize * strideSize;
@@ -442,10 +284,26 @@ public class OpenCVUtil {
     }
 
     /**
+     * 二值化并转换为8位单通道
+     * @param probMat 概率图
+     * @param bitThresh 阈值
+     * @return mat 结果图
+     */
+    public static Mat threshold(Mat probMat, float bitThresh) {
+        // 概率图转Mat
+        Mat bitmap = new Mat();
+        // 二值化: 概率图 > 阈值 的区域为文本区域
+        Imgproc.threshold(probMat, bitmap, bitThresh, 255, Imgproc.THRESH_BINARY);
+        // 转换为 8位 单通道
+        bitmap.convertTo(bitmap, CvType.CV_8UC1);
+        return bitmap;
+    }
+
+    /**
      * 将图像缩放到目标宽高并转换RGB通道
      * @param mat 原图
      * @param dstSize 目标尺寸
-     * @return mat 缩放转换RGB通道后的图像
+     * @return mat 结果图
      */
     public static Mat resizeToRGB(Mat mat, Size dstSize) {
         // 缩放图像，使用双线性插值，保持图像内容不变形
@@ -471,7 +329,7 @@ public class OpenCVUtil {
         }
         // 创建目标尺寸的黑色背景
         Mat result = new Mat(dstSize, mat.type());
-        result.setTo(new Scalar(0, 0, 0));
+        result.setTo(COLOR_BLACK);
         // 左上对齐放置
         Rect roi = new Rect(0, 0, mat.width(), mat.height());
         Mat roiMat = result.submat(roi);
@@ -532,22 +390,32 @@ public class OpenCVUtil {
         return new int[]{bestIndex, Float.floatToIntBits(bestProb)};
     }
 
-    public static Mat rotate(Mat srcMat, int angle) {
-        Mat dstMat = new Mat();
+//    public static Mat rotate(Mat srcMat, int angle) {
+//        Mat dstMat = new Mat();
+//        if (angle == 180) {
+//            // 180度旋转
+//            Core.rotate(srcMat, dstMat, Core.ROTATE_180);
+//        } else if (angle == 90) {
+//            // 90度顺时针旋转
+//            Core.rotate(srcMat, dstMat, Core.ROTATE_90_CLOCKWISE);
+//        } else if (angle == 270) {
+//            // 90度逆时针旋转（等价于270度顺时针）
+//            Core.rotate(srcMat, dstMat, Core.ROTATE_90_COUNTERCLOCKWISE);
+//        } else {
+//            releaseMat(dstMat);
+//            return srcMat;
+//        }
+//        return dstMat;
+//    }
+
+    public static void rotate(Mat srcMat, int angle) {
         if (angle == 180) {
-            // 180度旋转
-            Core.rotate(srcMat, dstMat, Core.ROTATE_180);
+            Core.rotate(srcMat, srcMat, Core.ROTATE_180);
         } else if (angle == 90) {
-            // 90度顺时针旋转
-            Core.rotate(srcMat, dstMat, Core.ROTATE_90_CLOCKWISE);
+            Core.rotate(srcMat, srcMat, Core.ROTATE_90_CLOCKWISE);
         } else if (angle == 270) {
-            // 90度逆时针旋转（等价于270度顺时针）
-            Core.rotate(srcMat, dstMat, Core.ROTATE_90_COUNTERCLOCKWISE);
-        } else {
-            releaseMat(dstMat);
-            return srcMat;
+            Core.rotate(srcMat, srcMat, Core.ROTATE_90_COUNTERCLOCKWISE);
         }
-        return dstMat;
     }
 
     /**
@@ -779,85 +647,6 @@ public class OpenCVUtil {
     }
 
     /**
-     * 检测框按阅读顺序排序（从左到右，从上到下）
-     * @param points 检测框列表，每个框包含4个顶点坐标
-     * @return 排序后的映射（位置索引 -> 四点坐标）
-     */
-    public static Map<Integer, Point[]> orderByRead(List<Point[]> points) {
-        Map<Integer, Point[]> result = new LinkedHashMap<>();
-
-        if (points == null || points.isEmpty()) {
-            return result;
-        }
-
-        int n = points.size();
-
-        // 存储每个框的边界信息
-        double[] minX = new double[n];
-        double[] maxX = new double[n];
-        double[] minY = new double[n];
-        double[] maxY = new double[n];
-
-        for (int i = 0; i < n; i++) {
-            Point[] box = points.get(i);
-            minX[i] = Double.MAX_VALUE;
-            maxX[i] = Double.MIN_VALUE;
-            minY[i] = Double.MAX_VALUE;
-            maxY[i] = Double.MIN_VALUE;
-
-            for (Point p : box) {
-                minX[i] = Math.min(minX[i], p.x);
-                maxX[i] = Math.max(maxX[i], p.x);
-                minY[i] = Math.min(minY[i], p.y);
-                maxY[i] = Math.max(maxY[i], p.y);
-            }
-        }
-
-        // 创建索引并按Y坐标排序
-        Integer[] indices = new Integer[n];
-        for (int i = 0; i < n; i++) indices[i] = i;
-        Arrays.sort(indices, Comparator.comparingDouble(a -> minY[a]));
-
-        // 计算平均高度作为行分组阈值
-        double avgHeight = 0;
-        for (int i = 0; i < n; i++) {
-            avgHeight += (maxY[i] - minY[i]);
-        }
-        avgHeight /= n;
-        double rowThreshold = avgHeight * 0.6;
-
-        // 分组行
-        List<List<Integer>> rows = new ArrayList<>();
-        List<Integer> currentRow = new ArrayList<>();
-        double currentRowY = minY[indices[0]];
-
-        for (int idx : indices) {
-            if (Math.abs(minY[idx] - currentRowY) <= rowThreshold) {
-                currentRow.add(idx);
-            } else {
-                if (!currentRow.isEmpty()) {
-                    rows.add(new ArrayList<>(currentRow));
-                    currentRow.clear();
-                }
-                currentRow.add(idx);
-                currentRowY = minY[idx];
-            }
-        }
-        rows.add(currentRow);
-
-        // 每行内按X坐标排序，构建结果
-        int position = 0;
-        for (List<Integer> row : rows) {
-            row.sort(Comparator.comparingDouble(a -> minX[a]));
-            for (int idx : row) {
-                result.put(position++, points.get(idx));
-            }
-        }
-
-        return result;
-    }
-
-    /**
      * 概率图转 Mat
      * Mat 资源判空释放
      */
@@ -874,106 +663,6 @@ public class OpenCVUtil {
             }
         }
         return mat;
-    }
-
-    public static Mat createProbHeatmap(float[][] probMap) {
-        Mat prob = buildProbMat(probMap);
-        if (prob.empty()) {
-            releaseMat(prob);
-            return new Mat();
-        }
-        Mat prob8 = new Mat();
-        Core.normalize(prob, prob8, 0, 255, Core.NORM_MINMAX, CvType.CV_8UC1);
-        Mat heatmap = new Mat();
-        Imgproc.applyColorMap(prob8, heatmap, Imgproc.COLORMAP_JET);
-        releaseMat(prob8);
-        releaseMat(prob);
-        return heatmap;
-    }
-
-    public static Mat createBinaryMap(float[][] probMap, float threshold) {
-        Mat prob = buildProbMat(probMap);
-        if (prob.empty()) {
-            releaseMat(prob);
-            return new Mat();
-        }
-        Mat binary = new Mat();
-        Imgproc.threshold(prob, binary, threshold, 255, Imgproc.THRESH_BINARY);
-        binary.convertTo(binary, CvType.CV_8UC1);
-        releaseMat(prob);
-        return binary;
-    }
-
-    public static Mat toVisualizableImage(Mat src, boolean srcIsRgb) {
-        if (src == null || src.empty()) {
-            return new Mat();
-        }
-        Mat vis;
-        if (src.depth() == CvType.CV_8U) {
-            vis = src.clone();
-        } else {
-            vis = new Mat();
-            Core.normalize(src, vis, 0, 255, Core.NORM_MINMAX);
-            vis.convertTo(vis, CvType.CV_8UC(src.channels()));
-        }
-
-        if (vis.channels() == 1) {
-            Mat bgr = new Mat();
-            Imgproc.cvtColor(vis, bgr, Imgproc.COLOR_GRAY2BGR);
-            releaseMat(vis);
-            vis = bgr;
-        } else if (vis.channels() == 4) {
-            Mat bgr = new Mat();
-            Imgproc.cvtColor(vis, bgr, Imgproc.COLOR_BGRA2BGR);
-            releaseMat(vis);
-            vis = bgr;
-        }
-
-        if (srcIsRgb && vis.channels() == 3) {
-            Mat bgr = new Mat();
-            Imgproc.cvtColor(vis, bgr, Imgproc.COLOR_RGB2BGR);
-            releaseMat(vis);
-            vis = bgr;
-        }
-        return vis;
-    }
-
-    public static Mat resizeToHeight(Mat src, int targetHeight) {
-        if (src == null || src.empty() || targetHeight <= 0) {
-            return new Mat();
-        }
-        if (src.rows() == targetHeight) {
-            return src.clone();
-        }
-        int targetWidth = Math.max(1, (int) Math.round((double) src.cols() * targetHeight / src.rows()));
-        Mat resized = new Mat();
-        Imgproc.resize(src, resized, new Size(targetWidth, targetHeight));
-        return resized;
-    }
-
-    public static Mat concatHorizontal(List<Mat> mats) {
-        if (mats == null || mats.isEmpty()) {
-            return new Mat();
-        }
-        Mat merged = new Mat();
-        Core.hconcat(mats, merged);
-        return merged;
-    }
-
-    public static void saveImageAndRelease(Mat image, String outputPath) {
-        if (image == null || image.empty()) {
-            releaseMat(image);
-            return;
-        }
-        saveImage(image, outputPath);
-        releaseMat(image);
-    }
-
-    public static void ensureDir(String dir) {
-        File file = new File(dir);
-        if (!file.exists() && !file.mkdirs()) {
-            throw new IllegalStateException("failed to create directory: " + dir);
-        }
     }
 
     public static void releaseMat(Mat mat) {

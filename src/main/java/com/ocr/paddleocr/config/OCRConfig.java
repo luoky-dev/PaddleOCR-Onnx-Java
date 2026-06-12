@@ -18,7 +18,7 @@ public class OCRConfig implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    // ==================== 模型路径配置 ====================
+    // ==================== 模型基础配置 ====================
 
     @Builder.Default
     private String detModelPath = "";
@@ -36,14 +36,15 @@ public class OCRConfig implements Serializable {
     // 是否启用debug模式
     @Builder.Default
     private boolean useDebug = false;
+    // 分批处理大小
+    @Builder.Default
+    private int batchSize = 6;
+
     // ==================== 检测模型参数 ====================
 
-    // 识别模型最大边长输入
-    @Builder.Default
-    private int detModelMaxSide = 960;
     // 二值化阈值
     @Builder.Default
-    private float bitThresh = 0.3f;
+    private float bitThresh = 0.6f;
     // 是否使用膨胀
     @Builder.Default
     private boolean isDilation = false;
@@ -74,12 +75,12 @@ public class OCRConfig implements Serializable {
     // 分类检测阈值
     @Builder.Default
     private float clsThresh = 0.9f;
-    // 检测框分批处理大小
+
+    // ==================== 图像识别参数 ====================
+
+    // 图像识别最低阈值
     @Builder.Default
-    private int batchSize = 6;
-    // 图像识别阈值
-    @Builder.Default
-    private float recThresh = 0.9f;
+    private float recThresh = 0.7f;
 
     // ==================== 系统参数 ====================
 
@@ -132,7 +133,6 @@ public class OCRConfig implements Serializable {
 
         // 数值参数验证
         // 正整数验证
-        validatePositive("detModelMaxSide", detModelMaxSide, errors);   // 检测模型尺寸限制
         validatePositive("detMinSize", boxMinSize, errors);           // 最小检测框尺寸
         validatePositive("batchSize", batchSize, errors);             // 批量处理大小
         validatePositive("numThreads", numThreads, errors);           // 线程数

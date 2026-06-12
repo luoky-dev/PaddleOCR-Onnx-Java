@@ -18,7 +18,12 @@ public class TextBox {
     private int index;
 
     /**
-     * 宽高比, 用于cls和rec模型批量输入
+     * 平均置信度
+     */
+    private double score;
+
+    /**
+     * 宽高比
      */
     private double aspectRatio;
 
