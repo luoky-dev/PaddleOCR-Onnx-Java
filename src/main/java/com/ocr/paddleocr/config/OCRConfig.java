@@ -21,15 +21,15 @@ public class OCRConfig implements Serializable {
     // ==================== 模型基础配置 ====================
 
     @Builder.Default
-    private String detModelPath = "";
+    private String detModelPath = null;
     @Builder.Default
-    private String clsModelPath = "";
+    private String clsModelPath = null;
     @Builder.Default
-    private String recModelPath = "";
+    private String recModelPath = null;
     @Builder.Default
-    private String dictPath = "";
+    private String dictPath = null;
     @Builder.Default
-    private String debugPath = "";
+    private String debugPath = null;
     // 是否启用分类检测模型
     @Builder.Default
     private boolean useCls = false;

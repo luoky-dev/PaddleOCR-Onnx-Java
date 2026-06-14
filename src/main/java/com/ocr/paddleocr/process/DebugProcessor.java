@@ -32,6 +32,7 @@ public class DebugProcessor {
             safeRun("clsCropImage", () -> printClsCropImage(context, debugPath));
             safeRun("clsResultImage", () -> printClsResultImage(context, debugPath));
         }
+        safeRun("rotateImage", () -> printRotateImage(context, debugPath));
         safeRun("recCropImage", () -> printRecCropImage(context, debugPath));
         safeRun("recConfidenceImage", () -> printRecConfidenceImage(context, debugPath));
         safeRun("recResultImage", () -> printRecResultImage(context, debugPath));
@@ -223,57 +224,50 @@ public class DebugProcessor {
         OpenCVUtil.releaseMat(rawCropMat);
     }
 
-    public static void printRotateImage(OCRContext context, OCRConfig ocrConfig, String debugPath) {
-        // 裁剪图
+    public static void printRotateImage(OCRContext context, String debugPath) {
+        // 旋转检测框裁剪文件夹
+        String rotateDebugPath = debugPath + "/rotateCrop";
+        ensureDir(rotateDebugPath);
+        // 裁剪图和绘制图
         Mat rawCropMat = context.getRawMat().clone();
-        // 获取宽高比低于阈值的旋转检测框
-        List<TextBox> aspectRatioRotateBoxes = context.getDetResultBoxes().stream()
-                .filter(box -> box.getAspectRatio() < ocrConfig.getBoxMinAspectRatio())
-                .collect(Collectors.toList());
-        // 裁剪宽高比旋转框
-        if (!aspectRatioRotateBoxes.isEmpty()) {
-            // 旋转检测框裁剪文件夹
-            String rotateDebugPath = debugPath + "/rotateCrop";
-            ensureDir(rotateDebugPath);
-            for (int i = 1; i <= aspectRatioRotateBoxes.size(); i++) {
+        Mat drawBoxesMat = context.getRawMat().clone();
+        // 获取需要旋转纠正的检测框
+        List<TextBox> rotateBoxes = context.getRecBatches().
+                stream().map(RecBatch::getBoxes).
+                flatMap(List::stream).
+                filter(TextBox::isRotate).
+                collect(Collectors.toList());
+        // 裁剪旋转框
+        if (!rotateBoxes.isEmpty()) {
+            for (int i = 1; i <= rotateBoxes.size(); i++) {
                 // 当前检测框
-                TextBox box = aspectRatioRotateBoxes.get(i - 1);
+                TextBox box = rotateBoxes.get(i - 1);
                 // 绘制原图检测框
-                String text = "aspectRatio:" + BigDecimal.valueOf(box.getAspectRatio()).setScale(2, RoundingMode.HALF_UP);
-                drawTextBox(rawCropMat, box.getPoints(), text);
+                // 填充角度和置信度
+                String text =  "angle:" + box.getAngle() +
+                        " confidence:" + BigDecimal.valueOf(box.getClsConfidence()).setScale(4, RoundingMode.HALF_UP);
+                drawTextBox(drawBoxesMat, box.getPoints(), text);
                 // 裁剪
                 Mat cropMat = OpenCVUtil.perspectiveTransformCrop(rawCropMat, box.getPoints());
                 // 保存
-                String cropImageName = "/verticalCrop" + i + ".jpg";
-                OpenCVUtil.saveImage(cropMat, rotateDebugPath + "/verticalCrop" + i + ".jpg");
-                log.debug("已保存低于宽高比阈值的纵型框旋转裁剪图, 文件名: {}", cropImageName);
+                String cropImageName = "/crop" + i + ".jpg";
+                String rotateImageName = "/rotate" + i + ".jpg";
+                OpenCVUtil.saveImage(cropMat, rotateDebugPath + cropImageName);
+                log.trace("已保存需要旋转纠正的检测框裁剪图, 文件名: {}", cropImageName);
+                // 旋转纠正
+                OpenCVUtil.rotate(cropMat, box.getAngle());
+                OpenCVUtil.saveImage(cropMat, rotateDebugPath + rotateImageName);
+                log.trace("已保存旋转纠正后的检测框裁剪图, 文件名: {}", rotateImageName);
                 // 资源释放
-                OpenCVUtil.releaseMat(rawCropMat);
+                OpenCVUtil.releaseMat(cropMat);
             }
-            aspectRatioRotateBoxes.forEach(box -> {
-
-            });
-            log.debug("已保存低于宽高比阈值的纵型框裁剪图, 文件名: verticalCropBox.jpg, 文件路径: {}", rotateDebugPath);
-            log.debug("已保存低于宽高比阈值的纵型框旋转图, 文件名: verticalRotateBox.jpg, 文件路径: {}", rotateDebugPath);
+            // 保存
+            OpenCVUtil.saveImage(drawBoxesMat, debugPath + "/rotateImage.jpg");
+            log.debug("已保存需要旋转纠正的检测框图, 文件名: rotateImage.jpg, 文件路径: {}", debugPath);
         }
-
-//        // 获取分类检测判断结果的旋转检测框
-//        if (ocrConfig.isUseCls()) {
-//            boxes.addAll(context.getClsResultBoxes().stream().filter(
-//                    box -> box.getAngle() != 0 && box.isRotate()
-//            ).map(TextBox::getPoints).collect(Collectors.toList()));
-//        }
-//        // 裁剪原图和旋转框图
-//        if (!boxes.isEmpty()) {
-//
-//
-//            boxes.forEach(box -> {
-//
-//                // 保存
-//                // 裁剪旋转图
-//
-//            });
-//        }
+        // 资源释放
+        OpenCVUtil.releaseMat(rawCropMat);
+        OpenCVUtil.releaseMat(drawBoxesMat);
     }
 
     public static void printRecCropImage(OCRContext context, String debugPath) {

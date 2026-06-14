@@ -328,8 +328,8 @@ public class DetProcessor {
             textBoxes.get(index - 1).setIndex(index);
         }
         // 输出统计信息
-        log.info("结果统计 - 总轮廓框: {}, 有效检测框: {}", contours.size(), textBoxes.size());
-        log.info("过滤统计 - 噪声框过滤: {}, 置信度不足过滤: {}, 多边近似失败过滤: {}",
+        log.debug("结果统计 - 总轮廓框: {}, 有效检测框: {}", contours.size(), textBoxes.size());
+        log.debug("过滤统计 - 噪声框过滤: {}, 置信度不足过滤: {}, 多边近似失败过滤: {}",
                 contourBoxes.stream().filter(ContourBox::isNoiseFilter).count(),
                 contourBoxes.stream().filter(ContourBox::isScoreFilter).count(),
                 contourBoxes.stream().filter(ContourBox::isApproxFilter).count());

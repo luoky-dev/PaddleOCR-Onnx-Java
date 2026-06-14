@@ -13,27 +13,22 @@ import java.util.*;
  */
 public class OpenCVUtil {
 
-
     // 预定义颜色 - BGR格式
     private static final Scalar COLOR_RED = new Scalar(0, 0, 255);
     private static final Scalar COLOR_GREEN = new Scalar(0, 255, 0);
     private static final Scalar COLOR_WHITE = new Scalar(255, 255, 255);
-    private static final Scalar COLOR_BLACK = new Scalar(0, 0, 0);
 
     /**
      * 绘制检测框
      */
     public static void drawBox(Mat image, Point[] points) {
-
         // 将点转换为 MatOfPoint
         MatOfPoint matOfPoint = new MatOfPoint();
         matOfPoint.fromArray(points);
-
         // 绘制多边形轮廓
         Imgproc.polylines(image, Collections.singletonList(matOfPoint),
                 true, COLOR_GREEN, 2);
-
-        OpenCVUtil.releaseMat(matOfPoint);
+        releaseMat(matOfPoint);
     }
 
     /**
@@ -211,26 +206,6 @@ public class OpenCVUtil {
     }
 
     /**
-     * 交换四点顺序 - 宽高交换、竖排转横排
-     * @param points 原始四点坐标 - [0]左上, [1]右上, [2]右下, [3]左下
-     * @return 交换后的四点坐标 - [0]左上, [1]左下, [2]右下, [3]右上
-     */
-    public static Point[] rotateOrderPoints(Point[] points) {
-        if (points == null || points.length != 4) {
-            return points;
-        }
-
-        // 原始顺序: [0]左上, [1]右上, [2]右下, [3]左下
-        // 交换后: [0]左上, [1]左下, [2]右下, [3]右上
-        return new Point[]{
-                points[0],  // 左上保持不变
-                points[3],  // 左下 -> 右上
-                points[2],  // 右下保持不变
-                points[1]   // 右上 -> 左下
-        };
-    }
-
-    /**
      * 长边限制和对齐到步长倍数方法
      * @param srcSize 原图尺寸
      * @param limitSize 长边限制尺寸
@@ -327,9 +302,9 @@ public class OpenCVUtil {
         if (mat.width() > dstSize.width || mat.height() > dstSize.height) {
             return mat;
         }
-        // 创建目标尺寸的黑色背景
+        // 创建目标尺寸的白色背景
         Mat result = new Mat(dstSize, mat.type());
-        result.setTo(COLOR_BLACK);
+        result.setTo(COLOR_WHITE);
         // 左上对齐放置
         Rect roi = new Rect(0, 0, mat.width(), mat.height());
         Mat roiMat = result.submat(roi);
@@ -389,24 +364,6 @@ public class OpenCVUtil {
         // 将概率值通过 floatToIntBits 编码为 int 便于存储
         return new int[]{bestIndex, Float.floatToIntBits(bestProb)};
     }
-
-//    public static Mat rotate(Mat srcMat, int angle) {
-//        Mat dstMat = new Mat();
-//        if (angle == 180) {
-//            // 180度旋转
-//            Core.rotate(srcMat, dstMat, Core.ROTATE_180);
-//        } else if (angle == 90) {
-//            // 90度顺时针旋转
-//            Core.rotate(srcMat, dstMat, Core.ROTATE_90_CLOCKWISE);
-//        } else if (angle == 270) {
-//            // 90度逆时针旋转（等价于270度顺时针）
-//            Core.rotate(srcMat, dstMat, Core.ROTATE_90_COUNTERCLOCKWISE);
-//        } else {
-//            releaseMat(dstMat);
-//            return srcMat;
-//        }
-//        return dstMat;
-//    }
 
     public static void rotate(Mat srcMat, int angle) {
         if (angle == 180) {

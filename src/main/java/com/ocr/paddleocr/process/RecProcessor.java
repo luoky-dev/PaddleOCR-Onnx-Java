@@ -162,7 +162,7 @@ public class RecProcessor {
                 // 模型输出
                 float[][][] prob = OnnxUtil.parseOnnxValue3D(output);
                 batch.setProb(prob);
-                log.trace("模型推理第 {}/{} 批完成, 本批检测框数量: {}, 推理字符数: {}, 映射字典数: {}",
+                log.debug("模型推理第 {}/{} 批完成, 本批检测框数量: {}, 推理字符数: {}, 映射字典数: {}",
                         batchCount, recBatch.size(), prob.length, prob[0].length, prob[0][0].length);
             } catch (OrtException e) {
                 log.error("图像识别模型推理失败", e);
@@ -188,12 +188,12 @@ public class RecProcessor {
             dict = OpenCVUtil.readDictionary(ocrConfig.getDictPath());
             log.debug("字典读取成功, 字典长度: {}", dict.length);
         } catch (IOException e) {
-            log.error("字典读取失败, 图像识别后处理失败");
+            log.error("字典读取失败, 图像识别失败");
             throw new RuntimeException("Read dictionary failed, recognition failed",e);
         }
         // 判断模型输出和字符映射字典是否匹配
         if (recBatch.get(0).getProb()[0][0].length != dict.length) {
-            log.error("模型输出与字典类型不匹配, 图像识别后处理失败");
+            log.error("模型输出与字典类型不匹配, 图像识别失败");
             throw new RuntimeException("String dictionary length is invalid, recognition failed");
         }
         // 按批次解码
@@ -207,7 +207,6 @@ public class RecProcessor {
             float[][][] batchProb = batch.getProb();
             for (int i = 0; i < batch.getBoxes().size(); i++) {
                 totalCount ++;
-                log.debug("开始解码第 {} 个检测框", i);
                 // 当前检测框框
                 TextBox box = batch.getBoxes().get(i);
                 // 当前检测框的概率数组
@@ -219,6 +218,7 @@ public class RecProcessor {
                     int[] decoded = OpenCVUtil.decode(timeStep);
                     ctcResult.add(decoded);
                 }
+                log.trace("解码当前批次第 {} 个检测框完成, 置信度阈值: {}", i, ocrConfig.getRecThresh());
                 log.trace("当前检测框时间步长度: {}", ctcResult.size());
                 log.trace("当前检测框时间步索引: {}",
                         ctcResult.stream().map(arr -> arr[0]).collect(Collectors.toList()));
@@ -264,14 +264,14 @@ public class RecProcessor {
                         .average()
                         .orElse(0.0);
 
-                log.debug("当前检测框最终识别结果: {}, 置信度: {}, 最低置信度阈值: {}", recText, confidence, ocrConfig.getRecThresh());
+                log.trace("当前检测框最终识别结果: {}, 置信度: {}", recText, confidence);
                 box.setRecText(recText);
                 box.setRecConfidence((float) confidence);
                 if(confidence > ocrConfig.getRecThresh()) {
                     recResultBoxes.add(box);
                 } else  {
                     filterCount ++;
-                    log.debug("当前检测框识别结果置信度过低, 已过滤");
+                    log.trace("当前检测框识别结果置信度过低, 已过滤");
                 }
             }
         }
