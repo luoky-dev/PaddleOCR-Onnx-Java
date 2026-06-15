@@ -19,6 +19,49 @@ public class OpenCVUtil {
     private static final Scalar COLOR_WHITE = new Scalar(255, 255, 255);
 
     /**
+     * 保存图像
+     */
+    public static void saveImage(Mat image, String outputPath) {
+        Imgcodecs.imwrite(outputPath, image);
+    }
+
+    /**
+     * 读取图像
+     */
+    public static Mat getImage(String inputPath) {
+        return Imgcodecs.imread(inputPath);
+    }
+
+    /**
+     * 获取图像名
+     */
+    public static String getImageName(String inputPath) {
+        return new File(inputPath).getName();
+    }
+
+    /**
+     * 读取字典文件
+     * @param dictPath 文件路径
+     * @return String[] 字符串数组
+     * @throws IOException IO读取异常
+     */
+    public static String[] readDictionary(String dictPath) throws IOException {
+        List<String> dictList = new ArrayList<>();
+        BufferedReader br = new BufferedReader(
+                new InputStreamReader(new FileInputStream(dictPath), StandardCharsets.UTF_8));
+        String line;
+        // 开始添加background token
+        dictList.add("");
+        while ((line = br.readLine()) != null) {
+            dictList.add(line);
+        }
+        // 末尾添加unknown token
+        dictList.add(" ");
+        br.close();
+        return dictList.toArray(new String[0]);
+    }
+
+    /**
      * 绘制检测框
      */
     public static void drawBox(Mat image, Point[] points) {
@@ -50,46 +93,6 @@ public class OpenCVUtil {
         // 绘制文字
         Imgproc.putText(image, text, labelPos, Imgproc.FONT_HERSHEY_SIMPLEX,
                 0.5, COLOR_RED, 1, Imgproc.LINE_AA, false);
-    }
-
-    /**
-     * 保存图像
-     */
-    public static void saveImage(Mat image, String outputPath) {
-        Imgcodecs.imwrite(outputPath, image);
-    }
-
-    /**
-     * 读取图像
-     */
-    public static Mat getImage(String inputPath) {
-        return Imgcodecs.imread(inputPath);
-    }
-
-    /**
-     * 获取图像名
-     */
-    public static String getImageName(String inputPath) {
-        return new File(inputPath).getName();
-    }
-
-    /**
-     * 读取字典
-     */
-    public static String[] readDictionary(String dictPath) throws IOException {
-        List<String> dictList = new ArrayList<>();
-        BufferedReader br = new BufferedReader(
-                new InputStreamReader(new FileInputStream(dictPath), StandardCharsets.UTF_8));
-        String line;
-        // 开始添加background token
-        dictList.add("");
-        while ((line = br.readLine()) != null) {
-            dictList.add(line);
-        }
-        // 末尾添加unknown token
-        dictList.add(" ");
-        br.close();
-        return dictList.toArray(new String[0]);
     }
 
     /**
@@ -157,18 +160,9 @@ public class OpenCVUtil {
     }
 
     /**
-     * 计算两点间距离
-     */
-    public static double distance(Point p1, Point p2) {
-        double dx = p1.x - p2.x;
-        double dy = p1.y - p2.y;
-        return Math.sqrt(dx * dx + dy * dy);
-    }
-
-    /**
-     * 对四点坐标按顺时针/逆时针排序（基于中心点角度）
+     * 对四点坐标按顺时针/逆时针排序 (基于中心点角度) 
      * @param points 四个点的数组
-     * @return 排序后的四个点数组（按角度从 -π 到 π 排序）
+     * @return 排序后的四个点数组 (按角度从 -π 到 π 排序) 
      */
     public static Point[] orderPoints(Point[] points) {
         if (points == null || points.length != 4) {
@@ -184,7 +178,7 @@ public class OpenCVUtil {
         orderPoints.sort(Comparator.comparingDouble(p -> Math.atan2(p.y - cy, p.x - cx)));
 
         // 3. 将起始点旋转到左上角
-        // 计算每个点的 x+y 值，最小的通常是左上角
+        // 计算每个点的 x+y 值, 最小的通常是左上角
         int leftTopIndex = 0;
         double minSum = orderPoints.get(0).x + orderPoints.get(0).y;
         for (int i = 1; i < 4; i++) {
@@ -281,7 +275,7 @@ public class OpenCVUtil {
      * @return mat 结果图
      */
     public static Mat resizeToRGB(Mat mat, Size dstSize) {
-        // 缩放图像，使用双线性插值，保持图像内容不变形
+        // 缩放图像, 使用双线性插值, 保持图像内容不变形
         Mat resized = new Mat();
         Imgproc.resize(mat, resized, dstSize);
         // 转换RGB通道
@@ -365,6 +359,11 @@ public class OpenCVUtil {
         return new int[]{bestIndex, Float.floatToIntBits(bestProb)};
     }
 
+    /**
+     * 原图旋转 - 90/180/270度方向纠正到0度
+     * @param srcMat 原图
+     * @param angle 当前角度
+     */
     public static void rotate(Mat srcMat, int angle) {
         if (angle == 180) {
             Core.rotate(srcMat, srcMat, Core.ROTATE_180);
@@ -378,7 +377,7 @@ public class OpenCVUtil {
     /**
      * 还原检测框坐标到原图尺寸
      * @param points 当前图像上的顶点坐标数组
-     * @param resizeSize 当前图像尺寸（缩放后的尺寸）
+     * @param resizeSize 当前图像尺寸 (缩放后的尺寸) 
      * @param originalSize 原始图像尺寸
      * @return 还原后的坐标数组
      */
@@ -475,7 +474,7 @@ public class OpenCVUtil {
         double area = width * height;
         double perimeter = 2 * (width + height);
 
-        // 2. 计算扩张距离（敏感于 unclipRatio）
+        // 2. 计算扩张距离 (敏感于 unclipRatio) 
         double distance = area * unclipRatio / perimeter;
 
         // 存储平移后的直线系数 [a, b, c]
@@ -534,21 +533,21 @@ public class OpenCVUtil {
 
     /**
      * 通过矩形顶点获取矩形框尺寸/四边形最大尺寸
-     * @param points 矩形四个顶点（已排序）
-     * @return Size对象（最大宽度、最大高度）
+     * @param points 矩形四个顶点 (已排序) 
+     * @return Size对象 (最大宽度、最大高度) 
      */
     public static Size getRectSize(Point[] points) {
         if (points == null || points.length != 4) {
             return new Size(0, 0);
         }
 
-        // 计算宽度（取上边和下边的最大值）
+        // 计算宽度 (取上边和下边的最大值) 
         double width = Math.max(
                 distance(points[0], points[1]),
                 distance(points[2], points[3])
         );
 
-        // 计算高度（取左边和右边的最大值）
+        // 计算高度 (取左边和右边的最大值) 
         double height = Math.max(
                 distance(points[0], points[3]),
                 distance(points[1], points[2])
@@ -560,7 +559,7 @@ public class OpenCVUtil {
     /**
      * 多边形近似算法
      * @param points 原始多边形顶点数组
-     * @param epsilon 近似精度（越小越接近原形状，越大简化越多）
+     * @param epsilon 近似精度 (越小越接近原形状, 越大简化越多) 
      * @param closed 是否为闭合多边形
      * @return 简化后的多边形顶点数组
      */
@@ -591,6 +590,11 @@ public class OpenCVUtil {
         return result;
     }
 
+    /**
+     * 获取最小外接矩形框
+     * @param points 多边形顶点
+     * @return 最小外接矩形框顶点
+     */
     public static Point[] minAreaRect(Point[] points) {
         // 最终过滤后返回的四边形顶点
         Point[] quadPoints = new Point[4];
@@ -622,6 +626,22 @@ public class OpenCVUtil {
         return mat;
     }
 
+    /**
+     * 计算两点间距离
+     * @param p1 顶点1
+     * @param p2 顶点2
+     * @return double 距离
+     */
+    public static double distance(Point p1, Point p2) {
+        double dx = p1.x - p2.x;
+        double dy = p1.y - p2.y;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    /**
+     * Mat资源释放
+     * @param mat Mat资源
+     */
     public static void releaseMat(Mat mat) {
         if (mat != null) {
             mat.release();

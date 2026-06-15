@@ -4,7 +4,6 @@ import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtException;
 import ai.onnxruntime.OrtSession;
 import ai.onnxruntime.OrtSession.SessionOptions;
-import com.ocr.paddleocr.config.ModelConfig;
 import com.ocr.paddleocr.config.OCRConfig;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -25,7 +24,6 @@ public class ModelManager implements AutoCloseable {
     private OrtSession recSession;
     private OrtSession clsSession;
     private OCRConfig ocrConfig;
-    private ModelConfig modelConfig;
 
     /**
      * 初始化标志
@@ -63,7 +61,6 @@ public class ModelManager implements AutoCloseable {
         log.debug("开始初始化模型管理器");
 
         this.ocrConfig = ocrConfig;
-        this.modelConfig = new ModelConfig();
 
         // 加载OpenCV
         loadOpenCV();

@@ -32,7 +32,7 @@ public class OnnxUtil {
         }
         // 查找名为 "x" 的输入, PaddleOCR 标准模型使用 "x" 作为输入名称
         NodeInfo nodeInfo = inputInfo.get("x");
-        // 降级处理: 取第一个输入, 如果找不到 "x"，可能是其他框架导出的模型
+        // 降级处理: 取第一个输入, 如果找不到 "x", 可能是其他框架导出的模型
         if (nodeInfo == null) {
             Map.Entry<String, NodeInfo> first = inputInfo.entrySet().iterator().next();
             nodeInfo = first.getValue();
@@ -63,7 +63,7 @@ public class OnnxUtil {
         if (outputInfo == null || outputInfo.isEmpty()) {
             throw new OrtException("Model has no output info");
         }
-        // 获取第一个输出（大多数模型只有一个输出）
+        // 获取第一个输出 (大多数模型只有一个输出)
         Map.Entry<String, NodeInfo> first = outputInfo.entrySet().iterator().next();
         NodeInfo nodeInfo = first.getValue();
         // 验证类型为 TensorInfo
@@ -129,7 +129,7 @@ public class OnnxUtil {
         } else if (value instanceof float[][][]) {
             return (float[][][]) value;
         } else {
-            // 类型不匹配，抛出异常
+            // 类型不匹配, 抛出异常
             throw new OrtException("Unsupported output shape");
         }
     }
@@ -155,7 +155,7 @@ public class OnnxUtil {
         } else if (value instanceof float[][]) {
             return (float[][]) value;
         } else {
-            // 类型不匹配，抛出异常
+            // 类型不匹配, 抛出异常
             throw new OrtException("Unsupported output shape");
         }
     }

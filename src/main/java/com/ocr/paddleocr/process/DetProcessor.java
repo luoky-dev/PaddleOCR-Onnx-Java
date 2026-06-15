@@ -3,7 +3,6 @@ package com.ocr.paddleocr.process;
 import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OrtException;
 import ai.onnxruntime.OrtSession.Result;
-import com.ocr.paddleocr.config.ModelConfig;
 import com.ocr.paddleocr.config.OCRConfig;
 import com.ocr.paddleocr.domain.ContourBox;
 import com.ocr.paddleocr.domain.DetState;
@@ -22,12 +21,10 @@ public class DetProcessor {
 
     private final ModelManager modelManager;
     private final OCRConfig ocrConfig;
-    private final ModelConfig modelConfig;
 
     public DetProcessor(ModelManager modelManager) {
         this.modelManager = modelManager;
         this.ocrConfig = modelManager.getOcrConfig();
-        this.modelConfig = modelManager.getModelConfig();
     }
 
     /**
@@ -82,7 +79,7 @@ public class DetProcessor {
                 Math.max(rawMat.height(), rawMat.width());
         log.debug("长边限制大小: {}", limitSize);
         // 长边限制 + 对齐
-        Size targetSize = OpenCVUtil.longSideLimitToStride(rawSize, limitSize, modelConfig.getStride());
+        Size targetSize = OpenCVUtil.longSideLimitToStride(rawSize, limitSize, ocrConfig.getStride());
         // 缩放图像 + 转换RGB通道
         Mat rgbMat = OpenCVUtil.resizeToRGB(rawMat, targetSize);
         log.debug("图像缩放完成: H:{} x W:{} -> H:{} x W:{}",
@@ -95,10 +92,10 @@ public class DetProcessor {
         log.debug("图像填充完成: H:{} x W:{} -> H:{} x W:{}",
                 rgbMat.height(), rgbMat.width(), paddedMat.height(), paddedMat.width());
         // 归一化 + 转换CHW格式数据
-        float[] chwData = OpenCVUtil.normalizeToCHW(paddedMat, modelConfig.getScoreMean(), modelConfig.getScoreStd());
+        float[] chwData = OpenCVUtil.normalizeToCHW(paddedMat, ocrConfig.getScoreMean(), ocrConfig.getScoreStd());
         log.debug("图像归一标准化完成, 均值: {}, 标准差: {}",
-                Arrays.toString(modelConfig.getScoreMean()),
-                Arrays.toString(modelConfig.getScoreStd()));
+                Arrays.toString(ocrConfig.getScoreMean()),
+                Arrays.toString(ocrConfig.getScoreStd()));
         // 资源释放
         OpenCVUtil.releaseMat(rgbMat);
         OpenCVUtil.releaseMat(paddedMat);
@@ -180,7 +177,7 @@ public class DetProcessor {
 
         // 2.可选膨胀操作, 用于连接相邻的文本区域
         if (ocrConfig.isDilation()) {
-            int kernelSize = modelConfig.getDilateKernelSize();
+            int kernelSize = ocrConfig.getDilateKernelSize();
             Mat kernel = Imgproc.getStructuringElement(
                     Imgproc.MORPH_RECT, new Size(kernelSize, kernelSize));
             Imgproc.dilate(bitmap, bitmap, kernel);

@@ -40,6 +40,44 @@ public class OCRConfig implements Serializable {
     @Builder.Default
     private int batchSize = 6;
 
+    // ==================== 模型参数配置 ====================
+
+    // 对齐倍数 (paddleOCR官方要求 32 的倍数) 
+    @Builder.Default
+    private int stride = 32;
+
+    // 减均值除方差 (Z-score Normalization) - ImageNet RGB均值
+    @Builder.Default
+    private float[] scoreMean = {0.485f, 0.456f, 0.406f};
+
+    // 减均值除方差 (Z-score Normalization) - ImageNet RGB标准差
+    @Builder.Default
+    private float[] scoreStd = {0.229f, 0.224f, 0.225f};
+
+    // 线性 (Linear Scaling) - 线性到 [-1,1] RGB均值
+    @Builder.Default
+    private float[] linearMean = {0.5f, 0.5f, 0.5f};
+
+    // 线性 (Linear Scaling) - 线性到 [-1,1] RGB标准差
+    @Builder.Default
+    private float[] linearStd = {0.5f, 0.5f, 0.5f};
+
+    // 膨胀核大小 (paddleOCR官方默认 3) 
+    @Builder.Default
+    private int dilateKernelSize = 3;
+
+    // 方向分类模型输入宽度
+    @Builder.Default
+    private int clsModelWidth = 320;
+
+    // 方向分类模型输入高度
+    @Builder.Default
+    private int clsModelHeight = 48;
+
+    // 角度分类字典
+    @Builder.Default
+    private int[] angleDict = {0, 180};
+
     // ==================== 检测模型参数 ====================
 
     // 二值化阈值
@@ -93,80 +131,78 @@ public class OCRConfig implements Serializable {
 
     /**
      * 验证OCR配置的完整性和有效性
-     * 在OCR服务初始化前调用，确保所有配置参数合法
+     * 在OCR服务初始化前调用, 确保所有配置参数合法
      *
-     * @throws IllegalArgumentException 当任何验证失败时抛出，包含所有错误信息
+     * @throws IllegalArgumentException 当任何验证失败时抛出, 包含所有错误信息
      */
     public void validate() {
-        // 收集所有错误信息，一次性返回给调用者
+        // 收集所有错误信息, 一次性返回给调用者
         List<String> errors = new ArrayList<>();
 
-        // 必需文件验证
-        // 检测模型文件必须存在且可读
+        // ==================== 必需文件验证 ====================
         validateRequiredFile("detModelPath", detModelPath, errors);
-        // 识别模型文件必须存在且可读
         validateRequiredFile("recModelPath", recModelPath, errors);
-        // 字典文件必须存在且可读
         validateRequiredFile("dictPath", dictPath, errors);
 
-        // 如果启用了角度分类，分类模型文件也必须存在
+        // 如果启用了角度分类, 分类模型文件也必须存在
         if (useCls) {
             validateRequiredFile("clsModelPath", clsModelPath, errors);
         }
 
-        // 调试路径验证
+        // ==================== 调试路径验证 ====================
         if (useDebug) {
-            if (isBlank(debugPath)) {
-                errors.add("debugPath must not be blank when useDebug=true");
-            } else {
-                File dir = new File(debugPath);
-                // 检查路径是否存在且是否为目录
-                if (dir.exists() && !dir.isDirectory()) {
-                    errors.add("debugPath is not a directory: " + debugPath);
-                }
-                // 如果目录不存在，尝试创建
-                else if (!dir.exists() && !dir.mkdirs()) {
-                    errors.add("failed to create debugPath directory: " + debugPath);
-                }
-            }
+            validateDebugPath(debugPath, errors);
         }
 
-        // 数值参数验证
-        // 正整数验证
-        validatePositive("detMinSize", boxMinSize, errors);           // 最小检测框尺寸
-        validatePositive("batchSize", batchSize, errors);             // 批量处理大小
-        validatePositive("numThreads", numThreads, errors);           // 线程数
-        validatePositive("boxLimit", boxLimit, errors);           // 检测框数量限制
+        // ==================== 整数参数验证 ====================
+        validatePositive("stride", stride, errors);
+        validatePositive("batchSize", batchSize, errors);
+        validatePositive("numThreads", numThreads, errors);
+        validatePositive("boxLimit", boxLimit, errors);
+        validatePositive("boxMinSize", boxMinSize, errors);
+        validatePositive("boxMinArea", boxMinArea, errors);
+        validatePositive("dilateKernelSize", dilateKernelSize, errors);
+        validatePositive("clsModelWidth", clsModelWidth, errors);
+        validatePositive("clsModelHeight", clsModelHeight, errors);
 
-        // 范围验证 [0, 1]
-        validateRange01("detThresh", bitThresh, errors);              // 检测阈值
-        validateRange01("detBoxThresh", boxThresh, errors);        // 检测框置信度阈值
-        validateRange01("clsThresh", clsThresh, errors);              // 分类置信度阈值
+        // stride 必须是32的倍数 (PaddleOCR官方要求) 
+        if (stride % 32 != 0) {
+            errors.add("stride must be a multiple of 32 (PaddleOCR requirement)");
+        }
 
-        // 正有限数验证
-        validateFinitePositive("detUnclipRatio", unclipRatio, errors);  // Unclip扩张比例
-        validateFinitePositive("epsilon", epsilon, errors);  // 腐蚀度
+        // ==================== 浮点数参数验证 ====================
+        validateRange01("bitThresh", bitThresh, errors);
+        validateRange01("boxThresh", boxThresh, errors);
+        validateRange01("clsThresh", clsThresh, errors);
+        validateRange01("recThresh", recThresh, errors);
+        validateRangePositive("unclipRatio", unclipRatio, errors);
+        validateRangePositive("epsilon", epsilon, errors);
+        validateRangePositive("boxMinAspectRatio", boxMinAspectRatio, errors);
 
-        // GPU参数验证
+        // ==================== 数组参数验证 ====================
+        validateMeanStdArray("scoreMean", scoreMean, errors);
+        validateMeanStdArray("scoreStd", scoreStd, errors);
+        validateMeanStdArray("linearMean", linearMean, errors);
+        validateMeanStdArray("linearStd", linearStd, errors);
+        validateAngleDict(angleDict, errors);
+
+        // ==================== GPU参数验证 ====================
         if (gpuId < 0) {
             errors.add("gpuId must be >= 0");
         }
 
-        // 抛出验证异常
+        // ==================== 抛出验证异常 ====================
         if (!errors.isEmpty()) {
             throw new IllegalArgumentException("Invalid OCRConfig: " + String.join("; ", errors));
         }
     }
 
+    // ==================== 验证方法 ====================
+
     /**
      * 验证必需文件是否存在且可读
-     *
-     * @param field 字段名称（用于错误消息）
-     * @param path 文件路径
-     * @param errors 错误列表
      */
     private static void validateRequiredFile(String field, String path, List<String> errors) {
-        // 1. 检查路径是否为空
         if (isBlank(path)) {
             errors.add(field + " must not be blank");
             return;
@@ -174,60 +210,110 @@ public class OCRConfig implements Serializable {
 
         File file = new File(path);
 
-        // 2. 检查文件是否存在
         if (!file.exists()) {
             errors.add(field + " file does not exist: " + path);
             return;
         }
 
-        // 3. 检查是否为文件（而不是目录）
         if (!file.isFile()) {
             errors.add(field + " is not a file: " + path);
             return;
         }
 
-        // 4. 检查文件是否可读
         if (!file.canRead()) {
             errors.add(field + " is not readable: " + path);
         }
     }
 
     /**
+     * 验证调试路径
+     */
+    private static void validateDebugPath(String debugPath, List<String> errors) {
+        if (isBlank(debugPath)) {
+            errors.add("debugPath must not be blank when useDebug=true");
+            return;
+        }
+
+        File dir = new File(debugPath);
+        if (dir.exists() && !dir.isDirectory()) {
+            errors.add("debugPath is not a directory: " + debugPath);
+        } else if (!dir.exists() && !dir.mkdirs()) {
+            errors.add("failed to create debugPath directory: " + debugPath);
+        }
+    }
+
+    /**
      * 验证正整数
-     * 用于：尺寸、批次大小、线程数等
      */
     private static void validatePositive(String field, int value, List<String> errors) {
         if (value <= 0) {
-            errors.add(field + " must be > 0");
+            errors.add(field + " must be > 0, current: " + value);
         }
     }
 
     /**
      * 验证范围在 [0, 1] 之间的浮点数
-     * 用于：各种阈值参数（概率值）
      */
     private static void validateRange01(String field, float value, List<String> errors) {
-        // Float.isFinite() 检查是否为有效数值（非无穷大、非NaN）
         if (!Float.isFinite(value) || value < 0.0f || value > 1.0f) {
-            errors.add(field + " must be in [0, 1]");
+            errors.add(field + " must be in [0, 1], current: " + value);
         }
     }
 
     /**
-     * 验证正有限浮点数
-     * 用于：扩张比例等必须为正数的参数
+     * 验证正浮点数
      */
-    private static void validateFinitePositive(String field, float value, List<String> errors) {
+    private static void validateRangePositive(String field, float value, List<String> errors) {
         if (!Float.isFinite(value) || value <= 0.0f) {
-            errors.add(field + " must be finite and > 0");
+            errors.add(field + " must be > 0, current: " + value);
+        }
+    }
+
+    /**
+     * 验证均值和标准差数组
+     */
+    private static void validateMeanStdArray(String field, float[] array, List<String> errors) {
+        if (array == null) {
+            errors.add(field + " must not be null");
+            return;
+        }
+
+        if (array.length != 3) {
+            errors.add(field + " must have length " + 3 + ", current: " + array.length);
+            return;
+        }
+
+        for (int i = 0; i < array.length; i++) {
+            if (!Float.isFinite(array[i])) {
+                errors.add(field + "[" + i + "] is not a finite number");
+            }
+        }
+    }
+
+    /**
+     * 验证角度字典
+     */
+    private static void validateAngleDict(int[] angleDict, List<String> errors) {
+        if (angleDict == null) {
+            errors.add("angleDict must not be null");
+            return;
+        }
+
+        if (angleDict.length == 0) {
+            errors.add("angleDict must not be empty");
+            return;
+        }
+
+        for (int i = 0; i < angleDict.length; i++) {
+            int angle = angleDict[i];
+            if (angle != 0 && angle != 90 && angle != 180 && angle != 270) {
+                errors.add("angleDict[" + i + "] must be one of [0, 90, 180, 270], current: " + angle);
+            }
         }
     }
 
     /**
      * 检查字符串是否为空白
-     *
-     * @param text 待检查的字符串
-     * @return true 如果为 null、空字符串或仅包含空白字符
      */
     private static boolean isBlank(String text) {
         return text == null || text.trim().isEmpty();

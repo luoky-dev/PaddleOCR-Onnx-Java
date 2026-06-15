@@ -18,13 +18,13 @@ public class PaddleOCRService {
      */
     private PaddleOCRService(OCRConfig config) {
         this.ocrService = PaddleOCRServiceImpl.getInstance(config);
-        log.debug("OCR服务初始化完成（自定义配置）");
+        log.debug("OCR服务初始化完成");
     }
 
     /**
      * 获取单例实例
      */
-    public static PaddleOCRService getInstance(OCRConfig config) {
+    private static PaddleOCRService getInstance(OCRConfig config) {
         if (instance == null) {
             synchronized (PaddleOCRService.class) {
                 if (instance == null) {

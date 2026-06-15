@@ -3,7 +3,6 @@ package com.ocr.paddleocr.process;
 import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OrtException;
 import ai.onnxruntime.OrtSession.Result;
-import com.ocr.paddleocr.config.ModelConfig;
 import com.ocr.paddleocr.config.OCRConfig;
 import com.ocr.paddleocr.domain.OCRContext;
 import com.ocr.paddleocr.domain.RecBatch;
@@ -23,12 +22,10 @@ public class RecProcessor {
 
     private final ModelManager modelManager;
     private final OCRConfig ocrConfig;
-    private final ModelConfig modelConfig;
 
     public RecProcessor(ModelManager modelManager) {
         this.modelManager = modelManager;
         this.ocrConfig = modelManager.getOcrConfig();
-        this.modelConfig = modelManager.getModelConfig();
     }
 
     /**
@@ -111,7 +108,7 @@ public class RecProcessor {
             // 组内最大图像尺寸
             Size maxSize = orderList.get(batchBegin).getValue().size();
             // 最内宽度向上填充到步长的倍数
-            Size modelInputSize = OpenCVUtil.widthToStride(maxSize, modelConfig.getStride());
+            Size modelInputSize = OpenCVUtil.widthToStride(maxSize, ocrConfig.getStride());
             log.debug("组内最大尺寸: H:{} x W:{}, 组内模型输入尺寸: H:{} x W:{}",
                     maxSize.height, maxSize.width, modelInputSize.height, modelInputSize.width);
             for (int index = batchBegin; index < batchEnd; index++) {
@@ -121,10 +118,10 @@ public class RecProcessor {
                 log.trace("裁剪图填充完成: H:{} x W:{} -> H:{} x W:{}",
                         srcMat.height(), srcMat.width(), paddedMat.height(), paddedMat.width());
                 // 归一化并转换CHW格式
-                float[] chwData = OpenCVUtil.normalizeToCHW(paddedMat, modelConfig.getLinearMean(), modelConfig.getLinearStd());
+                float[] chwData = OpenCVUtil.normalizeToCHW(paddedMat, ocrConfig.getLinearMean(), ocrConfig.getLinearStd());
                 log.trace("裁剪图归一标准化完成, 均值: {}, 标准差: {}",
-                        Arrays.toString(modelConfig.getLinearMean()),
-                        Arrays.toString(modelConfig.getLinearStd()));
+                        Arrays.toString(ocrConfig.getLinearMean()),
+                        Arrays.toString(ocrConfig.getLinearStd()));
                 chwList.add(chwData);
                 batchBoxes.add(orderList.get(index).getKey());
                 // 资源释放

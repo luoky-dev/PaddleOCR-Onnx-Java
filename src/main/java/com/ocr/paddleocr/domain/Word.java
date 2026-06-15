@@ -82,14 +82,14 @@ public class Word implements Serializable {
         private float confidence;
 
         /**
-         * 设置box（自动保留2位小数）
+         * 设置box (自动保留2位小数) 
          */
         public Builder box(Point[] box) {
             if (box != null) {
                 this.box = new Point[box.length];
                 for (int i = 0; i < box.length; i++) {
                     if (box[i] != null) {
-                        // 使用BigDecimal保留2位小数，与setter保持一致
+                        // 使用BigDecimal保留2位小数, 与setter保持一致
                         BigDecimal x = BigDecimal.valueOf(box[i].x)
                                 .setScale(2, RoundingMode.HALF_UP);
                         BigDecimal y = BigDecimal.valueOf(box[i].y)
@@ -110,10 +110,10 @@ public class Word implements Serializable {
         }
 
         /**
-         * 设置置信度（自动保留4位小数）
+         * 设置置信度 (自动保留4位小数) 
          */
         public Builder confidence(float confidence) {
-            // 使用BigDecimal保留4位小数，与setter保持一致
+            // 使用BigDecimal保留4位小数, 与setter保持一致
             BigDecimal bd = BigDecimal.valueOf(confidence)
                     .setScale(4, RoundingMode.HALF_UP);
             this.confidence = bd.floatValue();

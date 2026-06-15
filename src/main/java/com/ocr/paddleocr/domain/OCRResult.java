@@ -32,7 +32,7 @@ public class OCRResult implements Serializable {
     private int imageHeight;
 
     /**
-     * 处理时间（毫秒）
+     * 处理时间 - 毫秒
      */
     private long processingTime;
 

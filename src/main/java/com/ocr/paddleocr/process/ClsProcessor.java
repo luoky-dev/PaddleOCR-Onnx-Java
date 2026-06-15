@@ -3,7 +3,6 @@ package com.ocr.paddleocr.process;
 import ai.onnxruntime.OnnxTensor;
 import ai.onnxruntime.OrtException;
 import ai.onnxruntime.OrtSession.Result;
-import com.ocr.paddleocr.config.ModelConfig;
 import com.ocr.paddleocr.config.OCRConfig;
 import com.ocr.paddleocr.domain.ClsBatch;
 import com.ocr.paddleocr.domain.OCRContext;
@@ -21,12 +20,10 @@ public class ClsProcessor {
 
     private final ModelManager modelManager;
     private final OCRConfig ocrConfig;
-    private final ModelConfig modelConfig;
 
     public ClsProcessor(ModelManager modelManager) {
         this.modelManager = modelManager;
         this.ocrConfig = modelManager.getOcrConfig();
-        this.modelConfig = modelManager.getModelConfig();
     }
 
     /**
@@ -69,8 +66,8 @@ public class ClsProcessor {
         log.debug("检测框数量: {}, 批量处理大小: {}, 总批次: {}", boxes.size(), batchSize, (boxes.size() + batchSize - 1) / batchSize);
         // 确定模型输入尺寸
         // cls模型对图像文字形变不敏感, 可以直接简单分组缩放输入
-        int modelInputH = Math.toIntExact(modelInputShape[2] != -1 ? modelInputShape[2] : modelConfig.getClsModelHeight());
-        int modelInputW = Math.toIntExact(modelInputShape[3] != -1 ? modelInputShape[3] : modelConfig.getClsModelWith());
+        int modelInputH = Math.toIntExact(modelInputShape[2] != -1 ? modelInputShape[2] : ocrConfig.getClsModelHeight());
+        int modelInputW = Math.toIntExact(modelInputShape[3] != -1 ? modelInputShape[3] : ocrConfig.getClsModelWidth());
         log.debug("模型输入图像尺寸: H:{} x W:{}", modelInputH, modelInputW);
         // 按batch简单分组
         List<ClsBatch> clsBatches = new ArrayList<>();
@@ -101,10 +98,10 @@ public class ClsProcessor {
                 log.trace("裁剪图缩放完成: H:{} x W:{} -> H:{} x W:{}",
                         cropMat.height(), cropMat.width(), rgbMat.height(), rgbMat.width());
                 // 归一化并转换CHW格式
-                float[] chwData = OpenCVUtil.normalizeToCHW(rgbMat, modelConfig.getLinearMean(), modelConfig.getLinearStd());
+                float[] chwData = OpenCVUtil.normalizeToCHW(rgbMat, ocrConfig.getLinearMean(), ocrConfig.getLinearStd());
                 log.trace("裁剪图归一标准化完成, 均值: {}, 标准差: {}",
-                        Arrays.toString(modelConfig.getLinearMean()),
-                        Arrays.toString(modelConfig.getLinearStd()));
+                        Arrays.toString(ocrConfig.getLinearMean()),
+                        Arrays.toString(ocrConfig.getLinearStd()));
                 chwList.add(chwData);
                 // 资源释放
                 OpenCVUtil.releaseMat(cropMat);
@@ -163,7 +160,7 @@ public class ClsProcessor {
         // 模型输出分类数
         int angleCls = clsBatch.get(0).getProb()[0].length;
         // 判断模型输出和角度分类字典是否匹配
-        if (angleCls != modelConfig.getAngleDict().length) {
+        if (angleCls != ocrConfig.getAngleDict().length) {
             log.error("模型输出与字典类型不匹配, 分类检测后处理失败");
             throw new RuntimeException("Angle dictionary length is invalid, angle classify decoding failed");
         }
@@ -180,7 +177,7 @@ public class ClsProcessor {
                 // 当前检测框框方向分类概率数组
                 int[] decoded = OpenCVUtil.decode(prob[i]);
                 // 角度
-                int angle = modelConfig.getAngleDict()[decoded[0]];
+                int angle = ocrConfig.getAngleDict()[decoded[0]];
                 // 置信度
                 float score = Float.intBitsToFloat(decoded[1]);
                 log.trace("解码当前批次第 {} 个检测框完成, 置信度阈值: {}", i, ocrConfig.getClsThresh());
@@ -216,7 +213,7 @@ public class ClsProcessor {
                     } else {
                         box.setAngle(0);
                         box.setRotate(false);
-                        log.trace("当前检测框检测为: 0°, 置信度为 {}, 不需要旋转", score);
+                        log.trace("当前检测框检测为: {}°, 置信度为 {}, 不需要旋转", box.getAngle(), score);
                     }
                 }
                 clsResultBoxes.add(box);
