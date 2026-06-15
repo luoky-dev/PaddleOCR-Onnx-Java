@@ -11,18 +11,20 @@ import lombok.extern.slf4j.Slf4j;
 public class PaddleOCRService {
 
     private static volatile PaddleOCRService instance;
-    private final PaddleOCRServiceImpl ocrService;
+    private volatile PaddleOCRServiceImpl ocrService;
+    private volatile OCRConfig config;
 
     /**
      * 私有构造
      */
     private PaddleOCRService(OCRConfig config) {
-        this.ocrService = PaddleOCRServiceImpl.getInstance(config);
+        this.config = config;
+        this.ocrService = new PaddleOCRServiceImpl(config);
         log.debug("OCR服务初始化完成");
     }
 
     /**
-     * 获取单例实例
+     * 获取实例 - 支持配置更新
      */
     private static PaddleOCRService getInstance(OCRConfig config) {
         if (instance == null) {
@@ -30,11 +32,34 @@ public class PaddleOCRService {
                 if (instance == null) {
                     instance = new PaddleOCRService(config);
                 } else {
-                    log.warn("使用自定义配置初始化, 新配置将被忽略");
+                    // 检查配置是否变更
+                    if (!instance.config.equals(config)) {
+                        log.info("检测到配置变更, 重新初始化OCR服务");
+                        instance.reinit(config);
+                    }
                 }
             }
         }
         return instance;
+    }
+
+    /**
+     * 重新初始化服务
+     */
+    private synchronized void reinit(OCRConfig newConfig) {
+        try {
+            // 关闭旧服务
+            if (ocrService != null) {
+                ocrService.shutdown();
+            }
+            // 创建新服务
+            this.ocrService = new PaddleOCRServiceImpl(newConfig);
+            this.config = newConfig;
+            log.info("OCR服务重新初始化完成");
+        } catch (Exception e) {
+            log.error("OCR服务重新初始化失败", e);
+            throw new RuntimeException("Failed to reinitialize OCR service", e);
+        }
     }
 
     /**

@@ -20,7 +20,6 @@ import java.util.List;
 @Slf4j
 public class PaddleOCRServiceImpl {
 
-    private static volatile PaddleOCRServiceImpl instance;
     private final Gson gson;
     private final ModelManager modelManager;
     private final DetProcessor detProcessor;
@@ -32,7 +31,7 @@ public class PaddleOCRServiceImpl {
     /**
      * 私有构造
      */
-    private PaddleOCRServiceImpl(OCRConfig ocrConfig) {
+    public PaddleOCRServiceImpl(OCRConfig ocrConfig) {
         if (ocrConfig == null) {
             log.error("OCR服务配置不能为空");
             throw new IllegalArgumentException("OCR service configuration cannot be empty");
@@ -56,22 +55,6 @@ public class PaddleOCRServiceImpl {
             log.error("OCR服务实现初始化失败", e);
             throw new RuntimeException("OCR service initialization failed", e);
         }
-    }
-
-    /**
-     * 获取单例实例
-     */
-    public static PaddleOCRServiceImpl getInstance(OCRConfig config) {
-        if (instance == null) {
-            synchronized (PaddleOCRServiceImpl.class) {
-                if (instance == null) {
-                    instance = new PaddleOCRServiceImpl(config);
-                } else {
-                    log.warn("OCRServiceImpl已使用自定义配置初始化, 新配置将被忽略");
-                }
-            }
-        }
-        return instance;
     }
 
     /**

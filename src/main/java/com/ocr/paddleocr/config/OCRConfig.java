@@ -8,7 +8,9 @@ import lombok.NoArgsConstructor;
 import java.io.File;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 @Data
 @Builder
@@ -317,5 +319,65 @@ public class OCRConfig implements Serializable {
      */
     private static boolean isBlank(String text) {
         return text == null || text.trim().isEmpty();
+    }
+
+    // ==================== equals() 和 hashCode() ====================
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        OCRConfig that = (OCRConfig) o;
+
+        // 比较基本类型字段
+        return useCls == that.useCls &&
+                useDebug == that.useDebug &&
+                batchSize == that.batchSize &&
+                stride == that.stride &&
+                dilateKernelSize == that.dilateKernelSize &&
+                clsModelWidth == that.clsModelWidth &&
+                clsModelHeight == that.clsModelHeight &&
+                isDilation == that.isDilation &&
+                Float.compare(that.bitThresh, bitThresh) == 0 &&
+                Float.compare(that.unclipRatio, unclipRatio) == 0 &&
+                boxLimit == that.boxLimit &&
+                boxMinSize == that.boxMinSize &&
+                boxMinArea == that.boxMinArea &&
+                Float.compare(that.boxMinAspectRatio, boxMinAspectRatio) == 0 &&
+                Float.compare(that.boxThresh, boxThresh) == 0 &&
+                Float.compare(that.clsThresh, clsThresh) == 0 &&
+                Float.compare(that.recThresh, recThresh) == 0 &&
+                useGpu == that.useGpu &&
+                gpuId == that.gpuId &&
+                numThreads == that.numThreads &&
+                // 比较字符串字段
+                Objects.equals(detModelPath, that.detModelPath) &&
+                Objects.equals(clsModelPath, that.clsModelPath) &&
+                Objects.equals(recModelPath, that.recModelPath) &&
+                Objects.equals(dictPath, that.dictPath) &&
+                Objects.equals(debugPath, that.debugPath) &&
+                // 比较数组字段
+                Arrays.equals(scoreMean, that.scoreMean) &&
+                Arrays.equals(scoreStd, that.scoreStd) &&
+                Arrays.equals(linearMean, that.linearMean) &&
+                Arrays.equals(linearStd, that.linearStd) &&
+                Arrays.equals(angleDict, that.angleDict);
+    }
+
+    @Override
+    public int hashCode() {
+        int result = Objects.hash(detModelPath, clsModelPath, recModelPath, dictPath, debugPath,
+                useCls, useDebug, batchSize, stride, dilateKernelSize,
+                clsModelWidth, clsModelHeight, isDilation, bitThresh,
+                unclipRatio, boxLimit, boxMinSize, boxMinArea,
+                boxMinAspectRatio, boxThresh, clsThresh, recThresh,
+                useGpu, gpuId, numThreads);
+        result = 31 * result + Arrays.hashCode(scoreMean);
+        result = 31 * result + Arrays.hashCode(scoreStd);
+        result = 31 * result + Arrays.hashCode(linearMean);
+        result = 31 * result + Arrays.hashCode(linearStd);
+        result = 31 * result + Arrays.hashCode(angleDict);
+        return result;
     }
 }
