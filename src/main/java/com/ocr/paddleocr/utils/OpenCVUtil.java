@@ -6,6 +6,7 @@ import org.opencv.imgproc.Imgproc;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.*;
 
 /**
@@ -28,15 +29,11 @@ public class OpenCVUtil {
     /**
      * 读取图像
      */
-    public static Mat getImage(String inputPath) {
-        return Imgcodecs.imread(inputPath);
-    }
-
-    /**
-     * 获取图像名
-     */
-    public static String getImageName(String inputPath) {
-        return new File(inputPath).getName();
+    public static Mat getImage(File file) throws IOException {
+        // 使用字节流读取
+        byte[] bytes = Files.readAllBytes(file.toPath());
+        MatOfByte matOfByte = new MatOfByte(bytes);
+        return Imgcodecs.imdecode(matOfByte, Imgcodecs.IMREAD_COLOR);
     }
 
     /**

@@ -9,6 +9,7 @@ import com.ocr.paddleocr.process.*;
 import com.ocr.paddleocr.utils.OpenCVUtil;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -101,17 +102,23 @@ public class PaddleOCRServiceImpl {
         OCRContext context = new OCRContext();
         context.setImagePath(imagePath);
         try {
+            // 文件检验
             if (imagePath == null || imagePath.trim().isEmpty()) {
                 log.error("图片路径无效, 识别失败");
                 throw new RuntimeException("Image path is invalid, recognition failed");
+            }
+            File file = new File(imagePath);
+            if (!file.exists()) {
+                log.error("图片不存在, 识别失败");
+                throw new RuntimeException("File not found: " + imagePath + ", recognition failed");
             }
             if (!initialized) {
                 log.error("OCR服务未初始化, 识别失败");
                 throw new RuntimeException("OCR service not initialized, recognition failed");
             }
             // 读取图片
-            context.setRawMat(OpenCVUtil.getImage(imagePath));
-            context.setImageName(OpenCVUtil.getImageName(imagePath));
+            context.setRawMat(OpenCVUtil.getImage(file));
+            context.setImageName(file.getName());
             log.debug("图片读取成功, 图片路径: {}, 图片名: {}", context.getImagePath(), context.getImageName());
             // 图像检测
             detProcessor.detect(context);

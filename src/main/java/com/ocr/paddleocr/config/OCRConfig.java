@@ -91,7 +91,7 @@ public class OCRConfig implements Serializable {
     private final float epsilon = 0.002f;
     // unclip 扩张比率
     @Builder.Default
-    private float unclipRatio = 1.3f;
+    private float unclipRatio = 1.6f;
     // 检测框数量限制
     @Builder.Default
     private int boxLimit = 1000;
