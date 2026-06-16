@@ -64,36 +64,45 @@ public class PaddleOCRServiceImpl {
      * @return JSON格式的识别结果
      */
     public String recognize(String imagePath) {
-        log.info("PaddleOCR开始识别");
-        OCRResult result = rec(imagePath);
-        String resultJson = gson.toJson(result);
-        log.info("PaddleOCR识别完成, 识别结果: {}", resultJson);
-        return resultJson;
+        // 文件检验
+        if (imagePath == null || imagePath.trim().isEmpty()) {
+            log.error("图片路径无效, 识别失败");
+            return gson.toJson(OCRResult.builder().
+                    success(false).
+                    error("Image path is invalid, recognition failed").build());
+        }
+        File file = new File(imagePath);
+        OCRResult result = rec(file);
+        result.setImagePath(imagePath);
+        return gson.toJson(result);
+    }
+
+    /**
+     * 识别图片并返回JSON字符串
+     *
+     * @param file 图片文件
+     * @return JSON格式的识别结果
+     */
+    public String recognize(File file) {
+        OCRResult result = rec(file);
+        return gson.toJson(result);
     }
 
     /**
      * 识别图片并返回OCRResult对象
      *
-     * @param imagePath 图片路径
+     * @param file 图片文件
      * @return OCRResult对象
      */
-    private OCRResult rec(String imagePath) {
+    private OCRResult rec(File file) {
         long startTime = System.currentTimeMillis();
         OCRResult.OCRResultBuilder builder = OCRResult.builder()
-                .imagePath(imagePath)
-                .success(Boolean.FALSE);
+                .success(false);
         OCRContext context = new OCRContext();
-        context.setImagePath(imagePath);
         try {
-            // 文件检验
-            if (imagePath == null || imagePath.trim().isEmpty()) {
-                log.error("图片路径无效, 识别失败");
-                throw new RuntimeException("Image path is invalid, recognition failed");
-            }
-            File file = new File(imagePath);
             if (!file.exists()) {
                 log.error("图片不存在, 识别失败");
-                throw new RuntimeException("File not found: " + imagePath + ", recognition failed");
+                throw new RuntimeException("File not found, recognition failed");
             }
             if (!initialized) {
                 log.error("OCR服务未初始化, 识别失败");
@@ -102,7 +111,7 @@ public class PaddleOCRServiceImpl {
             // 读取图片
             context.setRawMat(OpenCVUtil.getImage(file));
             context.setImageName(file.getName());
-            log.debug("图片读取成功, 图片路径: {}, 图片名: {}", context.getImagePath(), context.getImageName());
+            log.debug("图片读取成功, 图片名: {}", context.getImageName());
             // 图像检测
             detProcessor.detect(context);
             if (context.getDetResultBoxes().isEmpty()){
@@ -139,7 +148,7 @@ public class PaddleOCRServiceImpl {
             });
 
             return builder
-                    .success(Boolean.TRUE)
+                    .success(true)
                     .imageWidth(context.getRawMat().width())
                     .imageHeight(context.getRawMat().height())
                     .allText(allTextStr.toString())
@@ -149,7 +158,7 @@ public class PaddleOCRServiceImpl {
         } catch (Exception e) {
             log.error("OCR识别失败, 错误信息: ", e);
             return builder
-                    .success(Boolean.FALSE)
+                    .success(false)
                     .error(e.getMessage())
                     .build();
         } finally {

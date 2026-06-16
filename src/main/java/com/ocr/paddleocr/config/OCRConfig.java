@@ -32,6 +32,9 @@ public class OCRConfig implements Serializable {
     private String dictPath = null;
     @Builder.Default
     private String debugPath = null;
+    // 字典数组
+    @Builder.Default
+    private String[] dict = null;
     // 是否启用分类检测模型
     @Builder.Default
     private boolean useCls = false;
@@ -144,11 +147,15 @@ public class OCRConfig implements Serializable {
         // ==================== 必需文件验证 ====================
         validateRequiredFile("detModelPath", detModelPath, errors);
         validateRequiredFile("recModelPath", recModelPath, errors);
-        validateRequiredFile("dictPath", dictPath, errors);
 
         // 如果启用了角度分类, 分类模型文件也必须存在
         if (useCls) {
             validateRequiredFile("clsModelPath", clsModelPath, errors);
+        }
+
+        // 如果不使用自定义字典, 字典文件必须存在
+        if (dict != null) {
+            validateRequiredFile("dictPath", dictPath, errors);
         }
 
         // ==================== 调试路径验证 ====================

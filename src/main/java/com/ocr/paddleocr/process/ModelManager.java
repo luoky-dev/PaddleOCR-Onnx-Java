@@ -5,10 +5,12 @@ import ai.onnxruntime.OrtException;
 import ai.onnxruntime.OrtSession;
 import ai.onnxruntime.OrtSession.SessionOptions;
 import com.ocr.paddleocr.config.OCRConfig;
+import com.ocr.paddleocr.utils.OpenCVUtil;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -68,6 +70,9 @@ public class ModelManager implements AutoCloseable {
         // 加载ONNX模型
         loadONNXModels();
 
+        // 加载字典
+        loadDictionary();
+
         long loadTimeMs = System.currentTimeMillis() - startTime;
         this.initialized = true;
 
@@ -118,8 +123,19 @@ public class ModelManager implements AutoCloseable {
                 log.debug("分类模型加载完成");
             }
         } finally {
-            closeSessionOptionsQuietly(sessionOptions);
+            closeSession(sessionOptions);
         }
+    }
+
+    /**
+     * 加载字典
+     */
+    private void loadDictionary() throws IOException {
+        if (ocrConfig.getDict() != null) {
+            log.debug("使用自定义字典,跳过字典文件加载");
+            return;
+        }
+        ocrConfig.setDict(OpenCVUtil.readDictionary(ocrConfig.getDictPath()));
     }
 
     /**
@@ -135,7 +151,7 @@ public class ModelManager implements AutoCloseable {
         // 如果配置不使用GPU, 直接返回CPU配置
         if (!ocrConfig.isUseGpu()) {
             SessionOptions cpuOptions = new SessionOptions();
-            applyCommonSessionOptions(cpuOptions);
+            commonSession(cpuOptions);
             log.debug("使用 CPU 执行配置, 线程数: {}", ocrConfig.getNumThreads());
             return cpuOptions;
         }
@@ -146,9 +162,9 @@ public class ModelManager implements AutoCloseable {
 
         try {
             // 应用通用配置
-            applyCommonSessionOptions(gpuOptions);
+            commonSession(gpuOptions);
             // 尝试启用CUDA提供程序
-            enableCudaProvider(gpuOptions, gpuId);
+            cudaProvider(gpuOptions, gpuId);
 
             log.debug("使用 GPU 执行配置(CUDA), gpuId: {}, 线程数: {}",
                     gpuId, ocrConfig.getNumThreads());
@@ -156,12 +172,12 @@ public class ModelManager implements AutoCloseable {
 
         } catch (Exception e) {
             // GPU初始化失败, 释放资源并降级到CPU
-            closeSessionOptionsQuietly(gpuOptions);
+            closeSession(gpuOptions);
             log.warn("启用CUDA提供程序失败, 回退到CPU配置, gpuId: {}", gpuId, e);
 
             // 创建CPU降级配置
             SessionOptions cpuFallback = new SessionOptions();
-            applyCommonSessionOptions(cpuFallback);
+            commonSession(cpuFallback);
             log.debug("回退到 CPU 执行配置, 线程数: {}", ocrConfig.getNumThreads());
             return cpuFallback;
         }
@@ -174,7 +190,7 @@ public class ModelManager implements AutoCloseable {
      * @param sessionOptions 要配置的SessionOptions对象
      * @throws OrtException ONNX Runtime异常
      */
-    private void applyCommonSessionOptions(SessionOptions sessionOptions)
+    private void commonSession(SessionOptions sessionOptions)
             throws OrtException {
 
         // 设置优化级别: 全部优化 (最高性能) 
@@ -200,7 +216,7 @@ public class ModelManager implements AutoCloseable {
      * @param gpuId GPU设备ID
      * @throws Exception 启用失败时抛出异常
      */
-    private void enableCudaProvider(SessionOptions sessionOptions, int gpuId)
+    private void cudaProvider(SessionOptions sessionOptions, int gpuId)
             throws Exception {
 
         // 尝试调用 addCUDA(int) 方法 (新版本API) 
@@ -261,13 +277,19 @@ public class ModelManager implements AutoCloseable {
         }
     }
 
-    private void closeSessionOptionsQuietly(SessionOptions sessionOptions) {
+    /**
+     * 关闭会话配置
+     */
+    private void closeSession(SessionOptions sessionOptions) {
         if (sessionOptions == null) {
             return;
         }
         sessionOptions.close();
     }
 
+    /**
+     * 获取检测模型会话
+     */
     public OrtSession getDetSession() {
         checkInitialized();
         return detSession;
@@ -297,6 +319,9 @@ public class ModelManager implements AutoCloseable {
         return env;
     }
 
+    /**
+     * 检查初始化
+     */
     private void checkInitialized() {
         if (!initialized) {
             log.error("模型管理器未初始化, 请先调用 init() 方法");

@@ -21,6 +21,9 @@ public class OpenCVUtil {
 
     /**
      * 保存图像
+     *
+     * @param image Mat数据
+     * @param outputPath 输出路径
      */
     public static void saveImage(Mat image, String outputPath) {
         Imgcodecs.imwrite(outputPath, image);
@@ -28,6 +31,10 @@ public class OpenCVUtil {
 
     /**
      * 读取图像
+     *
+     * @param file 文件
+     * @return Mat数据
+     * @throws IOException IO读取异常
      */
     public static Mat getImage(File file) throws IOException {
         // 使用字节流读取
@@ -38,6 +45,7 @@ public class OpenCVUtil {
 
     /**
      * 读取字典文件
+     *
      * @param dictPath 文件路径
      * @return String[] 字符串数组
      * @throws IOException IO读取异常
@@ -60,6 +68,9 @@ public class OpenCVUtil {
 
     /**
      * 绘制检测框
+     *
+     * @param image Mat数据
+     * @param points 检测框顶点坐标
      */
     public static void drawBox(Mat image, Point[] points) {
         // 将点转换为 MatOfPoint
@@ -72,7 +83,11 @@ public class OpenCVUtil {
     }
 
     /**
-     * 添加文本
+     * 添加文本 - 检测框上方
+     *
+     * @param image Mat数据
+     * @param text 文本内容
+     * @param points 检测框顶点坐标
      */
     public static void putText(Mat image, String text, Point[] points) {
         // 获取文本框的左上角 - 最小x和最小y
@@ -136,7 +151,8 @@ public class OpenCVUtil {
     }
 
     /**
-     * 将指定区域置空
+     * 将指定区域置空 - 填充白色
+     *
      * @param srcMat 原始图像
      * @param points 区域顶点坐标
      */
@@ -157,7 +173,8 @@ public class OpenCVUtil {
     }
 
     /**
-     * 对四点坐标按顺时针/逆时针排序 (基于中心点角度) 
+     * 对四点坐标按顺时针/逆时针排序 (基于中心点角度)
+     *
      * @param points 四个点的数组
      * @return 排序后的四个点数组 (按角度从 -π 到 π 排序) 
      */
@@ -198,6 +215,7 @@ public class OpenCVUtil {
 
     /**
      * 长边限制和对齐到步长倍数方法
+     *
      * @param srcSize 原图尺寸
      * @param limitSize 长边限制尺寸
      * @param strideSize 步长尺寸
@@ -224,6 +242,7 @@ public class OpenCVUtil {
     /**
      * 将尺寸中的宽度对齐到strideSize倍数
      * 高度不变, 宽度对齐
+     *
      * @param srcSize 原始尺寸
      * @param strideSize 对齐步长
      * @return 对齐后的尺寸
@@ -235,6 +254,7 @@ public class OpenCVUtil {
 
     /**
      * 等比例缩放到固定高度
+     *
      * @param srcSize 原始尺寸 (width, height)
      * @param targetHeight 目标高度
      * @return 缩放后的尺寸
@@ -251,6 +271,7 @@ public class OpenCVUtil {
 
     /**
      * 二值化并转换为8位单通道
+     *
      * @param probMat 概率图
      * @param bitThresh 阈值
      * @return mat 结果图
@@ -267,6 +288,7 @@ public class OpenCVUtil {
 
     /**
      * 将图像缩放到目标宽高并转换RGB通道
+     *
      * @param mat 原图
      * @param dstSize 目标尺寸
      * @return mat 结果图
@@ -284,7 +306,8 @@ public class OpenCVUtil {
     }
 
     /**
-     * 图像填充, 左上对齐
+     * 图像填充白色背景, 左上对齐
+     *
      * @param mat 原图像
      * @param dstSize 目标尺寸
      * @return 填充后图像
@@ -306,6 +329,7 @@ public class OpenCVUtil {
 
     /**
      * 通用图像归一化转换CHW格式方法
+     *
      * @param mat 缩放转换RGB通道后的图像
      * @param mean 均值
      * @param std 标准差
@@ -339,6 +363,7 @@ public class OpenCVUtil {
 
     /**
      * 通用解码方法
+     *
      * @param probs 概率数组
      * @return int[]{最大概率索引, 最大概率}
      */
@@ -358,6 +383,7 @@ public class OpenCVUtil {
 
     /**
      * 原图旋转 - 90/180/270度方向纠正到0度
+     *
      * @param srcMat 原图
      * @param angle 当前角度
      */
@@ -373,6 +399,7 @@ public class OpenCVUtil {
 
     /**
      * 还原检测框坐标到原图尺寸
+     *
      * @param points 当前图像上的顶点坐标数组
      * @param resizeSize 当前图像尺寸 (缩放后的尺寸) 
      * @param originalSize 原始图像尺寸
@@ -450,6 +477,7 @@ public class OpenCVUtil {
 
     /**
      * 基于边平移的扩张
+     *
      * @param points 轮廓框顶点
      * @param unclipRatio 扩张比例
      * @return 扩张后顶点
@@ -530,6 +558,7 @@ public class OpenCVUtil {
 
     /**
      * 通过矩形顶点获取矩形框尺寸/四边形最大尺寸
+     *
      * @param points 矩形四个顶点 (已排序) 
      * @return Size对象 (最大宽度、最大高度) 
      */
@@ -555,6 +584,7 @@ public class OpenCVUtil {
 
     /**
      * 多边形近似算法
+     *
      * @param points 原始多边形顶点数组
      * @param epsilon 近似精度 (越小越接近原形状, 越大简化越多) 
      * @param closed 是否为闭合多边形
@@ -589,6 +619,7 @@ public class OpenCVUtil {
 
     /**
      * 获取最小外接矩形框
+     *
      * @param points 多边形顶点
      * @return 最小外接矩形框顶点
      */
@@ -606,7 +637,8 @@ public class OpenCVUtil {
 
     /**
      * 概率图转 Mat
-     * Mat 资源判空释放
+     * @param probMap 概率图
+     * @return Mat数据
      */
     public static Mat buildProbMat(float[][] probMap) {
         if (probMap == null || probMap.length == 0 || probMap[0].length == 0) {
@@ -625,6 +657,7 @@ public class OpenCVUtil {
 
     /**
      * 计算两点间距离
+     *
      * @param p1 顶点1
      * @param p2 顶点2
      * @return double 距离
@@ -637,7 +670,7 @@ public class OpenCVUtil {
 
     /**
      * Mat资源释放
-     * @param mat Mat资源
+     * @param mat Mat数据
      */
     public static void releaseMat(Mat mat) {
         if (mat != null) {

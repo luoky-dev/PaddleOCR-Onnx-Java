@@ -13,7 +13,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.opencv.core.Mat;
 import org.opencv.core.Size;
 
-import java.io.IOException;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -179,15 +178,8 @@ public class RecProcessor {
         long startTime = System.currentTimeMillis();
         List<RecBatch> recBatch = context.getRecBatches();
         List<TextBox> recResultBoxes = new ArrayList<>();
-        // 读取字典
-        String[] dict;
-        try {
-            dict = OpenCVUtil.readDictionary(ocrConfig.getDictPath());
-            log.debug("字典读取成功, 字典长度: {}", dict.length);
-        } catch (IOException e) {
-            log.error("字典读取失败, 图像识别失败");
-            throw new RuntimeException("Read dictionary failed, recognition failed",e);
-        }
+        // 获取字典
+        String[] dict = ocrConfig.getDict();
         // 判断模型输出和字符映射字典是否匹配
         if (recBatch.get(0).getProb()[0][0].length != dict.length) {
             log.error("模型输出与字典类型不匹配, 图像识别失败");

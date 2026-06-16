@@ -4,6 +4,8 @@ import com.ocr.paddleocr.config.OCRConfig;
 import com.ocr.paddleocr.service.Impl.PaddleOCRServiceImpl;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.File;
+
 /**
  * OCR服务 - 支持静态方法调用
  */
@@ -63,7 +65,7 @@ public class PaddleOCRService {
     }
 
     /**
-     * 静态方法 - 识别图片
+     * 图片识别 - 图片路径
      *
      * @param config OCR配置
      * @param imagePath 图片路径
@@ -71,6 +73,17 @@ public class PaddleOCRService {
      */
     public static String recognize(OCRConfig config, String imagePath) {
         return getInstance(config).ocrService.recognize(imagePath);
+    }
+
+    /**
+     * 图片识别 - 图片文件
+     *
+     * @param config OCR配置
+     * @param file 图片文件
+     * @return JSON格式的识别结果
+     */
+    public static String recognize(OCRConfig config, File file) {
+        return getInstance(config).ocrService.recognize(file);
     }
 
     /**
